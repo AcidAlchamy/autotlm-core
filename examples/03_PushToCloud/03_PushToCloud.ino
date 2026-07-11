@@ -10,7 +10,10 @@
  *   fast blink = no WiFi · slow blink = WiFi up but pushes not landing ·
  *   brief pulse every second = streaming.
  */
-#define DRIVON_BOARD_FREEMATICS_ONEPLUS  // or DRIVON_BOARD_GENERIC_ESP32
+// Board: the generic define compiles with no extra libraries; the ONE+ needs
+// the FreematicsPlus library installed (see README "Supported boards").
+#define DRIVON_BOARD_GENERIC_ESP32
+// #define DRIVON_BOARD_FREEMATICS_ONEPLUS
 #include <Drivon.h>
 
 // Your hotspot + ingest endpoint. Plain http:// by design — TLS handshakes

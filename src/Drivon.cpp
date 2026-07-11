@@ -15,7 +15,6 @@ static void diagSaverThunk(void* ctx) { ((Drivon*)ctx)->saveDiagnostics(); }
 
 bool Drivon::begin(DrivonHAL& hal) {
   m_hal = &hal;
-  m_frame.clear();
 
 #if defined(ESP32)
   if (!m_mutex) m_mutex = xSemaphoreCreateMutex();
@@ -27,14 +26,23 @@ bool Drivon::begin(DrivonHAL& hal) {
   const bool boardOk = m_hal->begin();
   if (m_log) m_log->printf("DRIVON:%s board=%s\n", boardOk ? "OK" : "BOARD-FAIL", m_hal->boardId());
 
-  // Default device identity: board type + chip id (overridable via deviceId()).
+  // Device identity: a deviceId() override wins (even one set before
+  // begin()); otherwise board type + chip id. Written under the lock — the
+  // net task may already be running if wifi() was called before begin().
+  lock();
+  m_frame.clear();
   strncpy(m_frame.deviceType, m_hal->deviceType(), sizeof(m_frame.deviceType) - 1);
+  if (m_idOverride[0]) {
+    strncpy(m_frame.deviceId, m_idOverride, sizeof(m_frame.deviceId) - 1);
+  } else {
 #if defined(ESP32)
-  snprintf(m_frame.deviceId, sizeof(m_frame.deviceId), "%08X", (uint32_t)(ESP.getEfuseMac() >> 16));
+    snprintf(m_frame.deviceId, sizeof(m_frame.deviceId), "%08X", (uint32_t)(ESP.getEfuseMac() >> 16));
 #else
-  strncpy(m_frame.deviceId, m_hal->boardId(), sizeof(m_frame.deviceId) - 1);
+    strncpy(m_frame.deviceId, m_hal->boardId(), sizeof(m_frame.deviceId) - 1);
 #endif
+  }
   strncpy(m_frame.mems, m_hal->imuName(), sizeof(m_frame.mems) - 1);
+  unlock();
 
   // GNSS + IMU come up now (fast, local). OBD stays lazy: it talks to the
   // car's bus and can stall, which must never block connectivity.
@@ -143,8 +151,12 @@ DrivonFrame Drivon::frame() {
 
 void Drivon::deviceId(const char* id) {
   if (!id) return;
+  // Remember the override separately so it survives begin() (which resets
+  // the frame) no matter which order the sketch calls things in.
+  strncpy(m_idOverride, id, sizeof(m_idOverride) - 1);
+  m_idOverride[sizeof(m_idOverride) - 1] = 0;
   lock();
-  strncpy(m_frame.deviceId, id, sizeof(m_frame.deviceId) - 1);
+  strncpy(m_frame.deviceId, m_idOverride, sizeof(m_frame.deviceId) - 1);
   m_frame.deviceId[sizeof(m_frame.deviceId) - 1] = 0;
   unlock();
 }

@@ -74,7 +74,16 @@ class BoardFreematicsOnePlus : public DrivonHAL {
   }
 
   bool obdVIN(char* buf, size_t bufsize) override {
-    return m_linkUp && m_obd.getVIN(buf, bufsize);
+    if (!m_linkUp || !m_obd.getVIN(buf, bufsize)) return false;
+    // The co-processor hex-decodes whatever the bus said; keep only the
+    // alphanumerics a real VIN can contain so garbage bytes can't reach
+    // the telemetry frame.
+    size_t out = 0;
+    for (size_t i = 0; i < bufsize && buf[i]; i++) {
+      if (isalnum((unsigned char)buf[i])) buf[out++] = buf[i];
+    }
+    if (out < bufsize) buf[out] = 0;
+    return out > 0;
   }
 
   float obdBatteryVoltage() override {

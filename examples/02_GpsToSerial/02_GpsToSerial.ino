@@ -5,7 +5,10 @@
  * a fix (works indoors near a window with a decent antenna). Uncomment the
  * echo line to also see the raw NMEA stream, handy when checking wiring.
  */
-#define DRIVON_BOARD_FREEMATICS_ONEPLUS  // or DRIVON_BOARD_GENERIC_ESP32
+// Board: the generic define compiles with no extra libraries; the ONE+ needs
+// the FreematicsPlus library installed (see README "Supported boards").
+#define DRIVON_BOARD_GENERIC_ESP32
+// #define DRIVON_BOARD_FREEMATICS_ONEPLUS
 #include <Drivon.h>
 
 Drivon car;

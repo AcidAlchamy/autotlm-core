@@ -51,8 +51,8 @@ identical on every board.
 
 | Board | Define | What you get |
 |---|---|---|
-| **Freematics ONE+** | `DRIVON_BOARD_FREEMATICS_ONEPLUS` | OBD via the co-processor, GNSS (BE-220) on RX 26 @ 38400, ICM-42627 IMU, battery-voltage sense, status LED. Needs the [FreematicsPlus library](https://github.com/stanleyhuangyc/Freematics). |
-| **Generic ESP32 + CAN transceiver** | `DRIVON_BOARD_GENERIC_ESP32` (default on ESP32) | Drivon speaks ISO 15765-4 itself over the ESP32's TWAI controller (500 kbps, 11-bit, ISO-TP multi-frame for VIN/DTCs), GNSS on UART2, optional MPU-6050 IMU. Pins configurable via `BoardGenericEsp32::Pins`. |
+| **Generic ESP32 + CAN transceiver** | `DRIVON_BOARD_GENERIC_ESP32` (default on ESP32; what the examples ship with) | Drivon speaks ISO 15765-4 itself over the ESP32's TWAI controller (500 kbps, 11-bit, ISO-TP multi-frame for VIN/DTCs), GNSS on UART2, optional MPU-6050 IMU. No third-party libraries needed. Pins configurable via `BoardGenericEsp32::Pins`. |
+| **Freematics ONE+** | `DRIVON_BOARD_FREEMATICS_ONEPLUS` | OBD via the co-processor, GNSS (BE-220) on RX 26 @ 38400, ICM-42627 IMU, battery-voltage sense, status LED. Needs the [FreematicsPlus library](https://github.com/stanleyhuangyc/Freematics) — **note:** upstream needs small patches to build on arduino-esp32 3.x (`soc/gpio_struct.h` include; `esp_task_wdt_reconfigure`; the `ledcAttach` API). |
 | *Drivon Link* | *(coming)* | Our own hardware. Same sketches. |
 
 Custom hardware: subclass `DrivonHAL` (one small interface: OBD transport,
@@ -78,8 +78,10 @@ git clone https://github.com/AcidAlchamy/drivon-core.git ~/Documents/Arduino/lib
 arduino-cli compile --fqbn esp32:esp32:esp32 --library /path/to/drivon-core examples/01_HelloCar
 ```
 
-For the Freematics ONE+ also supply the FreematicsPlus library
-(`--libraries /path/to/Freematics/libraries`).
+The examples compile as-is for the generic ESP32 board. For the Freematics
+ONE+, flip the define at the top of the sketch and also supply the (patched —
+see the boards table) FreematicsPlus library:
+`--libraries /path/to/Freematics/libraries`.
 
 ## Examples
 

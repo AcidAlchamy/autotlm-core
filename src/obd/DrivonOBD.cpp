@@ -8,11 +8,12 @@
 #include "../core/DrivonPids.h"
 
 // Every mode-01 PID Drivon knows how to normalize; the discovery sweep keeps
-// only the ones this car's ECU actually advertises.
+// only the ones this car's ECU actually advertises. 0x42 (module voltage) is
+// included so boards without their own voltage sense can fall back to it.
 static const uint8_t CANDIDATE_PIDS[] = {
     0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
     0x10, 0x11, 0x1F, 0x21, 0x2C, 0x2D, 0x2F, 0x30, 0x31, 0x33, 0x3C, 0x3D,
-    0x43, 0x45, 0x46, 0x49, 0x4C, 0x5C, 0x5E};
+    0x42, 0x43, 0x45, 0x46, 0x49, 0x4C, 0x5C, 0x5E};
 
 // The gauges: read every cycle no matter what.
 static const uint8_t FAST_PIDS[] = {PID_RPM, PID_SPEED, PID_COOLANT_TEMP,
@@ -20,7 +21,10 @@ static const uint8_t FAST_PIDS[] = {PID_RPM, PID_SPEED, PID_COOLANT_TEMP,
 
 // Round-robin: how many extended PIDs to read per cycle.
 #define SWEEP_PER_CYCLE 4
-// Consecutive full-cycle failures before declaring the ECU gone.
+// Consecutive failed READS (not cycles) before declaring the ECU gone — the
+// same sensitivity as the road firmware's COBD error counter: one fully-dead
+// poll cycle (9 reads) trips it, so a dead ECU can't freeze gauges for long
+// or let the slow DTC read fire against a silent bus.
 #define MAX_FAIL_STREAK 8
 // How often to retry the ECU connection while it's down.
 #define INIT_RETRY_MS 10000
@@ -68,6 +72,7 @@ void DrivonOBD::discover() {
     if (m_log) m_log->printf("VIN:%s\n", m_vin);
   }
   m_nSupported = 0;
+  m_sweepIdx = 0;
   for (size_t i = 0; i < sizeof(CANDIDATE_PIDS) && m_nSupported < (int)sizeof(m_supported); i++) {
     if (m_hal->obdIsPIDSupported(CANDIDATE_PIDS[i])) m_supported[m_nSupported++] = CANDIDATE_PIDS[i];
   }
@@ -75,45 +80,49 @@ void DrivonOBD::discover() {
 }
 
 void DrivonOBD::pollPids() {
-  bool anyOk = false;
-
   for (uint8_t pid : FAST_PIDS) {
     int v;
     if (m_hal->obdReadPID(pid, v)) {
       m_pidVal[pid] = v;
       m_pidHave[pid] = true;
-      anyOk = true;
+      m_failStreak = 0;
+    } else if (++m_failStreak >= MAX_FAIL_STREAK) {
+      break;
     }
   }
 
-  for (int k = 0; k < SWEEP_PER_CYCLE && m_nSupported > 0; k++) {
+  for (int k = 0; k < SWEEP_PER_CYCLE && m_nSupported > 0 && m_failStreak < MAX_FAIL_STREAK; k++) {
     const uint8_t pid = m_supported[m_sweepIdx++ % m_nSupported];
     int v;
     if (m_hal->obdReadPID(pid, v)) {
       m_pidVal[pid] = v;
       m_pidHave[pid] = true;
-      anyOk = true;
+      m_failStreak = 0;
+    } else {
+      ++m_failStreak;
     }
   }
 
-  float volts = m_hal->obdBatteryVoltage();
-  if (isnan(volts) && m_pidHave[PID_CONTROL_MODULE_VOLTAGE]) {
-    // Boards without a voltage sense fall back to the ECU's own reading.
-    volts = (float)m_pidVal[PID_CONTROL_MODULE_VOLTAGE];
-  }
-  if (!isnan(volts)) m_volts = volts;
-
-  if (anyOk) {
-    m_failStreak = 0;
-  } else if (++m_failStreak >= MAX_FAIL_STREAK) {
+  if (m_failStreak >= MAX_FAIL_STREAK) {
     // The ECU stopped answering (ignition off, unplugged). Drop back to the
-    // lazy-init loop; everything else keeps running.
+    // lazy-init loop — with the retry timer cleared so the first reconnect
+    // attempt happens on the very next tick (quick restarts at a light
+    // shouldn't leave the gauges dead for 10 s).
     if (m_log) m_log->println("OBD:LOST");
     m_connected = false;
     m_failStreak = 0;
     m_hal->obdEnd();
-    m_lastInitTry = millis();
+    m_lastInitTry = 0;
+    return;
   }
+
+  float volts = m_hal->obdBatteryVoltage();
+  if (isnan(volts) && m_pidHave[PID_CONTROL_MODULE_VOLTAGE]) {
+    // Boards without a voltage sense fall back to the ECU's own reading
+    // (PID 0x42 is in the discovery sweep; whole-volt granularity).
+    volts = (float)m_pidVal[PID_CONTROL_MODULE_VOLTAGE];
+  }
+  if (!isnan(volts)) m_volts = volts;
 }
 
 void DrivonOBD::readDTCs() {

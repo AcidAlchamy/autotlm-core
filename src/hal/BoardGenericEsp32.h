@@ -146,11 +146,14 @@ class BoardGenericEsp32 : public DrivonHAL {
     const uint8_t req[] = {0x09, 0x02};
     uint8_t resp[40];
     const int n = obdRequest(req, sizeof(req), resp, sizeof(resp));
-    // Payload: 49 02 <count> <17 VIN chars>
-    if (n < 4 || resp[0] != 0x49 || resp[1] != 0x02) return false;
+    // Payload: 49 02 <count> <17 VIN chars>. Require the full 17 bytes — a
+    // short answer is a broken transfer, not a VIN.
+    if (n < 20 || resp[0] != 0x49 || resp[1] != 0x02) return false;
     size_t out = 0;
     for (int i = 3; i < n && out + 1 < bufsize; i++) {
-      if (resp[i] >= 0x20 && resp[i] < 0x7F) buf[out++] = (char)resp[i];
+      // Real VINs are strictly alphanumeric; anything else is line noise
+      // (and would need escaping downstream in the JSON frame).
+      if (isalnum(resp[i])) buf[out++] = (char)resp[i];
     }
     buf[out] = 0;
     return out > 0;
@@ -212,7 +215,11 @@ class BoardGenericEsp32 : public DrivonHAL {
     if (Wire.requestFrom(DRIVON_MPU6050_ADDR, 14) != 14) return false;
     int16_t raw[7];
     for (int i = 0; i < 7; i++) {
-      raw[i] = ((int16_t)Wire.read() << 8) | Wire.read();
+      // Two named reads: C++ leaves the operand order of | unspecified, and
+      // a byte-swapped IMU sample would be silent garbage.
+      const uint8_t hi = (uint8_t)Wire.read();
+      const uint8_t lo = (uint8_t)Wire.read();
+      raw[i] = (int16_t)(((uint16_t)hi << 8) | lo);
     }
     // raw[3] is the die temperature — skipped.
     acc[0] = raw[0] / 16384.0f;  // ±2 g full scale
@@ -287,7 +294,7 @@ class BoardGenericEsp32 : public DrivonHAL {
       return -1;
     }
 
-    const uint32_t deadline = millis() + DRIVON_OBD_TIMEOUT_MS;
+    uint32_t deadline = millis() + DRIVON_OBD_TIMEOUT_MS;
     int total = -1;    // expected payload length (multi-frame)
     int have = 0;      // bytes collected so far
     uint8_t nextSeq = 1;
@@ -303,7 +310,12 @@ class BoardGenericEsp32 : public DrivonHAL {
         // Single frame: payload length in the low nibble.
         const int len = rx.data[0] & 0x0F;
         if (len < 1 || len > 7) continue;
-        if (rx.data[1] == 0x7F) continue;  // negative response — keep waiting
+        if (rx.data[1] == 0x7F) {
+          // Negative response. NRC 0x78 = "response pending": the ECU asks
+          // for more time (common for VIN/DTC requests) — grant it.
+          if (len >= 3 && rx.data[3] == 0x78) deadline = millis() + 2000;
+          continue;
+        }
         const int n = (len <= (int)outCap) ? len : (int)outCap;
         memcpy(out, &rx.data[1], n);
         return n;
@@ -312,9 +324,9 @@ class BoardGenericEsp32 : public DrivonHAL {
       if (pci == 0x1 && total < 0) {
         // First frame of a multi-frame response: 12-bit total length.
         total = (((int)rx.data[0] & 0x0F) << 8) | rx.data[1];
-        if (total <= 0) return -1;
+        if (total <= 0 || total > (int)outCap) return -1;  // can't hold it -> honest failure
         have = 0;
-        for (int i = 2; i < 8 && have < total && have < (int)outCap; i++) out[have++] = rx.data[i];
+        for (int i = 2; i < 8 && have < total; i++) out[have++] = rx.data[i];
 
         // Flow control back to the ECU that answered: continue, no delay.
         twai_message_t fc = {};
@@ -329,11 +341,13 @@ class BoardGenericEsp32 : public DrivonHAL {
         // Consecutive frame: check the 4-bit rolling sequence number.
         if ((rx.data[0] & 0x0F) != (nextSeq & 0x0F)) return -1;
         nextSeq++;
-        for (int i = 1; i < 8 && have < total && have < (int)outCap; i++) out[have++] = rx.data[i];
-        if (have >= total || have >= (int)outCap) return have;
+        for (int i = 1; i < 8 && have < total; i++) out[have++] = rx.data[i];
+        if (have >= total) return have;
       }
     }
-    return (total > 0 && have > 0) ? have : -1;
+    // Timed out. A half-collected multi-frame response is NOT a response —
+    // returning it would hand callers truncated VINs and phantom DTC pairs.
+    return -1;
   }
 
   Pins m_pins;

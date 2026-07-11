@@ -5,7 +5,10 @@
  * watch the engine wake up. The ECU connection is brought up lazily in the
  * background, so the sketch starts instantly even before the ignition is on.
  */
-#define DRIVON_BOARD_FREEMATICS_ONEPLUS  // or DRIVON_BOARD_GENERIC_ESP32
+// Board: the generic define compiles with no extra libraries; the ONE+ needs
+// the FreematicsPlus library installed (see README "Supported boards").
+#define DRIVON_BOARD_GENERIC_ESP32
+// #define DRIVON_BOARD_FREEMATICS_ONEPLUS
 #include <Drivon.h>
 
 Drivon car;

@@ -115,11 +115,15 @@ class Drivon {
   uint32_t maxLoopUs() const { return m_maxLoopUs; }
 
   /**
-   * The status LED convention (can be disabled):
+   * The status LED convention (can be disabled — disabling also turns the
+   * LED off immediately):
    *   fast blink  = WiFi down · slow 1 s blink = WiFi up but pushes not
    *   landing · brief pulse = frame just pushed OK · off = networking unused
    */
-  void statusLed(bool enabled) { m_ledEnabled = enabled; }
+  void statusLed(bool enabled) {
+    m_ledEnabled = enabled;
+    if (!enabled && m_hal) m_hal->led(false);
+  }
 
   /** Quiet or redirect all library logging (nullptr = silent). */
   void setLogStream(Stream* s);
@@ -142,6 +146,7 @@ class Drivon {
   DrivonConfig m_config;
 
   DrivonFrame m_frame;
+  char m_idOverride[DRIVON_ID_LEN] = "";
   uint32_t m_lastCompose = 0;
   uint32_t m_maxLoopUs = 0;
   bool m_ledEnabled = true;

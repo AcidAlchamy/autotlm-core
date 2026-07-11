@@ -98,7 +98,7 @@ class DrivonOBD {
   bool m_pidHave[256] = {false};
   uint8_t m_supported[64];
   int m_nSupported = 0;
-  int m_sweepIdx = 0;
+  uint32_t m_sweepIdx = 0;  // unsigned: wraparound keeps the modulo in range
 
   float m_volts = 0;
   char m_vin[24] = "";
