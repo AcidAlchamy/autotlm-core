@@ -1,0 +1,206 @@
+/*
+ * Drivon.cpp — facade implementation (100% board-agnostic).
+ * Part of Drivon Core — MIT licensed.
+ */
+#include "Drivon.h"
+
+// Refresh the shared frame at most this often; the copy under the lock is
+// cheap but there is no point doing it at loop() speed for a 1 Hz push.
+#define COMPOSE_MS 100
+
+static void frameProviderThunk(void* ctx, DrivonFrame& out) {
+  ((Drivon*)ctx)->snapshotFrame(out);
+}
+static void diagSaverThunk(void* ctx) { ((Drivon*)ctx)->saveDiagnostics(); }
+
+bool Drivon::begin(DrivonHAL& hal) {
+  m_hal = &hal;
+  m_frame.clear();
+
+#if defined(ESP32)
+  if (!m_mutex) m_mutex = xSemaphoreCreateMutex();
+#endif
+
+  m_config.begin();
+  if (m_log) m_config.printPrevSession(*m_log);
+
+  const bool boardOk = m_hal->begin();
+  if (m_log) m_log->printf("DRIVON:%s board=%s\n", boardOk ? "OK" : "BOARD-FAIL", m_hal->boardId());
+
+  // Default device identity: board type + chip id (overridable via deviceId()).
+  strncpy(m_frame.deviceType, m_hal->deviceType(), sizeof(m_frame.deviceType) - 1);
+#if defined(ESP32)
+  snprintf(m_frame.deviceId, sizeof(m_frame.deviceId), "%08X", (uint32_t)(ESP.getEfuseMac() >> 16));
+#else
+  strncpy(m_frame.deviceId, m_hal->boardId(), sizeof(m_frame.deviceId) - 1);
+#endif
+  strncpy(m_frame.mems, m_hal->imuName(), sizeof(m_frame.mems) - 1);
+
+  // GNSS + IMU come up now (fast, local). OBD stays lazy: it talks to the
+  // car's bus and can stall, which must never block connectivity.
+  m_gnssBegan = m_gnss.begin(hal);
+  if (m_log) m_log->printf("GNSS:%s\n", m_gnssBegan ? "OK" : "NO");
+
+  const bool imuOk = m_imu.begin(hal);
+  if (m_log) m_log->printf("MEMS:%s\n", imuOk ? m_hal->imuName() : "NO");
+
+  m_obd.begin(hal);
+  m_obd.setLogStream(m_log);
+
+  m_net.attach(frameProviderThunk, diagSaverThunk, this);
+  m_net.setLogStream(m_log);
+
+  return boardOk;
+}
+
+void Drivon::wifi(const char* ssid, const char* pass) {
+  char savedSsid[33], savedPass[65];
+  if (ssid && ssid[0]) {
+    // Fresh credentials win and are persisted (so the unit reconnects on its
+    // own forever after, even in sketches that stop passing them).
+    m_config.saveWifi(ssid, pass ? pass : "");
+    m_net.wifi(ssid, pass ? pass : "");
+  } else if (m_config.loadWifi(savedSsid, sizeof(savedSsid), savedPass, sizeof(savedPass))) {
+    if (m_log) m_log->printf("WIFI:using saved credentials \"%s\"\n", savedSsid);
+    m_net.wifi(savedSsid, savedPass);
+  } else if (m_log) {
+    m_log->println("WIFI:no credentials (pass ssid/pass to car.wifi, or save them once)");
+  }
+}
+
+void Drivon::cloud(const char* url, const char* token, uint32_t intervalMs) {
+  m_net.cloud(url, token, intervalMs);
+}
+
+void Drivon::update() {
+  if (!m_hal) return;
+  const uint32_t t0 = micros();
+
+  ledTick();
+  m_gnss.tick();
+  m_imu.tick();
+  m_obd.tick();  // includes the lazy ECU bring-up
+
+  const uint32_t now = millis();
+  if (now - m_lastCompose >= COMPOSE_MS) {
+    m_lastCompose = now;
+    composeFrame();
+  }
+
+  const uint32_t dt = micros() - t0;
+  if (dt > m_maxLoopUs) m_maxLoopUs = dt;
+}
+
+// Copy the modules' latest values into the shared frame. Held briefly under
+// the lock so the core-0 network task always snapshots a coherent frame.
+void Drivon::composeFrame() {
+  const DrivonGPS g = m_gnss.data();
+  const DrivonMotion m = m_imu.data();
+
+  lock();
+  m_frame.gnssUp = m_gnss.alive();
+  m_frame.rssi = m_net.rssi();
+
+  m_frame.obdConnected = m_obd.connected();
+  m_frame.rpm = m_obd.rpm();
+  m_frame.speedKph = m_obd.speedKph();
+  m_frame.coolantC = m_obd.coolantC();
+  m_frame.loadPct = m_obd.loadPct();
+  m_frame.throttlePct = m_obd.throttlePct();
+  m_frame.volts = m_obd.volts();
+  strncpy(m_frame.vin, m_obd.vin(), sizeof(m_frame.vin) - 1);
+  m_obd.fillFrame(m_frame.pidHave, m_frame.pidVal);
+
+  m_frame.mil = m_obd.mil();
+  strncpy(m_frame.dtc, m_obd.dtcString(), sizeof(m_frame.dtc) - 1);
+
+  m_frame.fix = g.fix;
+  m_frame.lat = g.lat;
+  m_frame.lng = g.lng;
+  m_frame.altM = g.altM;
+  m_frame.gpsSpeedKph = g.speedKph;
+  m_frame.course = g.course;
+  m_frame.hdop = g.hdop;
+  m_frame.sats = g.sats;
+
+  m_frame.imuHave = m.valid;
+  m_frame.ax = m.ax; m_frame.ay = m.ay; m_frame.az = m.az;
+  m_frame.gx = m.gx; m_frame.gy = m.gy; m_frame.gz = m.gz;
+  unlock();
+}
+
+void Drivon::snapshotFrame(DrivonFrame& out) {
+  lock();
+  out = m_frame;
+  unlock();
+}
+
+DrivonFrame Drivon::frame() {
+  DrivonFrame f;
+  snapshotFrame(f);
+  return f;
+}
+
+void Drivon::deviceId(const char* id) {
+  if (!id) return;
+  lock();
+  strncpy(m_frame.deviceId, id, sizeof(m_frame.deviceId) - 1);
+  m_frame.deviceId[sizeof(m_frame.deviceId) - 1] = 0;
+  unlock();
+}
+
+void Drivon::saveDiagnostics() {
+  DrivonDiag d;
+  d.pushOk = m_net.pushOk();
+  d.pushFail = m_net.pushFail();
+  d.lastHttp = m_net.lastHttp();
+  d.wifiDrops = m_net.wifiDrops();
+  d.obdEver = m_obd.everConnected();
+  d.maxLoopUs = m_maxLoopUs;
+  d.boots = m_config.prevSession().boots;
+  m_config.saveDiag(d);
+}
+
+void Drivon::printDiagnostics(Stream& out) {
+  m_config.printPrevSession(out);
+  out.printf("DIAG NOW: wifi=%d rssi=%d pushOk=%lu pushFail=%lu lastHttp=%d wifiDrops=%lu "
+             "obd=%d gnss=%d maxLoopMs=%lu\n",
+             m_net.wifiConnected(), m_net.rssi(), (unsigned long)m_net.pushOk(),
+             (unsigned long)m_net.pushFail(), m_net.lastHttp(),
+             (unsigned long)m_net.wifiDrops(), m_obd.connected(), m_gnss.alive(),
+             (unsigned long)(m_maxLoopUs / 1000));
+}
+
+void Drivon::setLogStream(Stream* s) {
+  m_log = s;
+  m_obd.setLogStream(s);
+  m_net.setLogStream(s);
+}
+
+// LED legend (same convention the road firmware proved out):
+//   fast 350 ms blink = WiFi down · slow 1 s blink = WiFi up, pushes not
+//   landing · brief 90 ms pulse per push = streaming · off = net unused.
+void Drivon::ledTick() {
+  if (!m_ledEnabled || !m_hal) return;
+  const uint32_t t = millis();
+  bool on = false;
+  switch (m_net.state()) {
+    case DRIVON_NET_DISABLED:  on = false; break;
+    case DRIVON_NET_OFFLINE:   on = (t / 350) % 2; break;
+    case DRIVON_NET_NO_PUSH:   on = (t / 1000) % 2; break;
+    case DRIVON_NET_STREAMING: on = (t - m_net.lastPushMs()) < 90; break;
+  }
+  m_hal->led(on);
+}
+
+void Drivon::lock() {
+#if defined(ESP32)
+  if (m_mutex) xSemaphoreTake(m_mutex, portMAX_DELAY);
+#endif
+}
+
+void Drivon::unlock() {
+#if defined(ESP32)
+  if (m_mutex) xSemaphoreGive(m_mutex);
+#endif
+}

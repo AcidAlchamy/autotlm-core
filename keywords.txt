@@ -1,0 +1,99 @@
+#######################################
+# Syntax coloring map for Drivon Core
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+Drivon	KEYWORD1
+DrivonHAL	KEYWORD1
+DrivonFrame	KEYWORD1
+DrivonOBD	KEYWORD1
+DrivonGNSS	KEYWORD1
+DrivonIMU	KEYWORD1
+DrivonNet	KEYWORD1
+DrivonConfig	KEYWORD1
+DrivonGPS	KEYWORD1
+DrivonMotion	KEYWORD1
+DrivonDiag	KEYWORD1
+DrivonCanMsg	KEYWORD1
+BoardFreematicsOnePlus	KEYWORD1
+BoardGenericEsp32	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin	KEYWORD2
+update	KEYWORD2
+wifi	KEYWORD2
+cloud	KEYWORD2
+gps	KEYWORD2
+motion	KEYWORD2
+onDTC	KEYWORD2
+obd	KEYWORD2
+gnss	KEYWORD2
+imu	KEYWORD2
+net	KEYWORD2
+config	KEYWORD2
+frame	KEYWORD2
+deviceId	KEYWORD2
+printDiagnostics	KEYWORD2
+statusLed	KEYWORD2
+setLogStream	KEYWORD2
+connected	KEYWORD2
+rpm	KEYWORD2
+speedKph	KEYWORD2
+coolantC	KEYWORD2
+loadPct	KEYWORD2
+throttlePct	KEYWORD2
+volts	KEYWORD2
+vin	KEYWORD2
+hasPid	KEYWORD2
+pidValue	KEYWORD2
+supportedCount	KEYWORD2
+dtcCount	KEYWORD2
+dtcAt	KEYWORD2
+mil	KEYWORD2
+clearDTCs	KEYWORD2
+dtcString	KEYWORD2
+setPollInterval	KEYWORD2
+setDtcInterval	KEYWORD2
+data	KEYWORD2
+alive	KEYWORD2
+echoTo	KEYWORD2
+onSentence	KEYWORD2
+available	KEYWORD2
+setSampleInterval	KEYWORD2
+wifiConnected	KEYWORD2
+rssi	KEYWORD2
+state	KEYWORD2
+pushOk	KEYWORD2
+pushFail	KEYWORD2
+lastHttp	KEYWORD2
+wifiDrops	KEYWORD2
+setVerbose	KEYWORD2
+saveWifi	KEYWORD2
+loadWifi	KEYWORD2
+saveDiag	KEYWORD2
+prevSession	KEYWORD2
+putString	KEYWORD2
+getString	KEYWORD2
+putInt	KEYWORD2
+getInt	KEYWORD2
+toJson	KEYWORD2
+canRead	KEYWORD2
+canWrite	KEYWORD2
+canAvailable	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+DRIVON_BOARD_FREEMATICS_ONEPLUS	LITERAL1
+DRIVON_BOARD_GENERIC_ESP32	LITERAL1
+DRIVON_NET_DISABLED	LITERAL1
+DRIVON_NET_OFFLINE	LITERAL1
+DRIVON_NET_NO_PUSH	LITERAL1
+DRIVON_NET_STREAMING	LITERAL1

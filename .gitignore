@@ -1,0 +1,16 @@
+# Build output
+build/
+*.bin
+*.elf
+*.map
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local secrets — never commit credentials or ingest tokens
+secrets.h
+config.local.h
