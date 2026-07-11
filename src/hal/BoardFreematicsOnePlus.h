@@ -1,7 +1,11 @@
 /*
  * BoardFreematicsOnePlus.h — DrivonHAL for the Freematics ONE+ (ESP32).
  *
- * This is the exact hardware recipe proven in the car:
+ * A compatibility board and capability benchmark: the ONE+ is a commercial
+ * ESP32 OBD dongle we support so Drivon's own hardware can be measured
+ * against it. Drivon Link itself is built on BoardGenericEsp32, not this.
+ *
+ * The hardware recipe:
  *  - OBD-II via the co-processor link (FreematicsPlus COBD) — protocol
  *    negotiation, PID normalization and voltage sense all happen there.
  *  - GNSS (Beitian BE-220) on UART1, RX = GPIO26 @ 38400 baud — the module's

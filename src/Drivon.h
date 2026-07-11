@@ -22,8 +22,8 @@
  *
  * Board selection is a compile-time define placed BEFORE the include:
  *
- *   #define DRIVON_BOARD_FREEMATICS_ONEPLUS   // Freematics ONE+ (stand-in unit)
- *   #define DRIVON_BOARD_GENERIC_ESP32        // plain ESP32 + CAN transceiver
+ *   #define DRIVON_BOARD_GENERIC_ESP32        // plain ESP32 + CAN transceiver (primary)
+ *   #define DRIVON_BOARD_FREEMATICS_ONEPLUS   // Freematics ONE+ (compat / benchmark)
  *   #include <Drivon.h>
  *
  * With no define, an ESP32 target defaults to the generic board. Custom

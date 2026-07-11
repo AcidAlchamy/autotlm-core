@@ -8,12 +8,13 @@
  * the board class, nothing else.
  *
  * Shipping implementations:
- *   - BoardFreematicsOnePlus  (hal/BoardFreematicsOnePlus.h) — the stand-in
- *     unit we develop on today. OBD via the Freematics co-processor, GNSS on
- *     RX=GPIO26 @ 38400, ICM-42627 IMU.
- *   - BoardGenericEsp32       (hal/BoardGenericEsp32.h) — plain ESP32 + a
- *     3.3 V CAN transceiver (SN65HVD230). Speaks ISO 15765-4 (ISO-TP over
- *     TWAI) itself, GNSS on a configurable UART, optional MPU-6050 IMU.
+ *   - BoardGenericEsp32       (hal/BoardGenericEsp32.h) — the primary target:
+ *     our own ESP32 hardware wired to a 3.3 V CAN transceiver (SN65HVD230).
+ *     Speaks ISO 15765-4 (ISO-TP over TWAI) itself, GNSS on a configurable
+ *     UART, optional MPU-6050 IMU. This is what Drivon Link is built on.
+ *   - BoardFreematicsOnePlus  (hal/BoardFreematicsOnePlus.h) — a compatibility
+ *     board and capability benchmark (a commercial ESP32 OBD dongle). OBD via
+ *     its co-processor, GNSS on RX=GPIO26 @ 38400, ICM-42627 IMU.
  *
  * Porting to new hardware = subclassing this and implementing what the board
  * has. Anything the board lacks can honestly return false; the modules treat

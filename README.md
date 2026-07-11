@@ -47,17 +47,19 @@ on a real LTE hotspot:
 ## Supported boards
 
 Board selection is one `#define` before the include — sketches are otherwise
-identical on every board.
+identical on every board. Drivon runs on **your own hardware**: a plain ESP32
+(and, soon, our own Drivon Link board) is the first-class target.
 
 | Board | Define | What you get |
 |---|---|---|
-| **Generic ESP32 + CAN transceiver** | `DRIVON_BOARD_GENERIC_ESP32` (default on ESP32; what the examples ship with) | Drivon speaks ISO 15765-4 itself over the ESP32's TWAI controller (500 kbps, 11-bit, ISO-TP multi-frame for VIN/DTCs), GNSS on UART2, optional MPU-6050 IMU. No third-party libraries needed. Pins configurable via `BoardGenericEsp32::Pins`. |
-| **Freematics ONE+** | `DRIVON_BOARD_FREEMATICS_ONEPLUS` | OBD via the co-processor, GNSS (BE-220) on RX 26 @ 38400, ICM-42627 IMU, battery-voltage sense, status LED. Needs the [FreematicsPlus library](https://github.com/stanleyhuangyc/Freematics) — **note:** upstream needs small patches to build on arduino-esp32 3.x (`soc/gpio_struct.h` include; `esp_task_wdt_reconfigure`; the `ledcAttach` API). |
-| *Drivon Link* | *(coming)* | Our own hardware. Same sketches. |
+| **Generic ESP32 + CAN transceiver** | `DRIVON_BOARD_GENERIC_ESP32` (default on ESP32; what the examples ship with) | The primary target. Drivon speaks ISO 15765-4 itself over the ESP32's TWAI controller (500 kbps, 11-bit, ISO-TP multi-frame for VIN/DTCs), GNSS on UART2, optional MPU-6050 IMU. No third-party libraries needed. Pins configurable via `BoardGenericEsp32::Pins`. |
+| *Drivon Link* | *(coming)* | Our own purpose-built OBD-II unit. Same sketches, no changes. |
+| **Freematics ONE+** | `DRIVON_BOARD_FREEMATICS_ONEPLUS` | A compatibility board and capability benchmark — a commercial ESP32 OBD dongle we support so Drivon Link can be measured against (and surpass) it. OBD via its co-processor, GNSS (BE-220) on RX 26 @ 38400, ICM-42627 IMU, battery-voltage sense, status LED. Needs the [FreematicsPlus library](https://github.com/stanleyhuangyc/Freematics) — **note:** upstream needs small patches to build on arduino-esp32 3.x (`soc/gpio_struct.h` include; `esp_task_wdt_reconfigure`; the `ledcAttach` API). |
 
 Custom hardware: subclass `DrivonHAL` (one small interface: OBD transport,
 GNSS bytes, IMU, LED) and pass it to `car.begin(yourHal)`. Nothing else in
-the library knows what board it's on.
+the library knows what board it's on — which is exactly how our own boards
+plug in.
 
 Generic-board default wiring: CAN TX GPIO5 / RX GPIO4 → SN65HVD230 → CANH pin 6,
 CANL pin 14, GND pin 5 of the OBD-II port; GNSS RX 16 / TX 17 @ 9600;
