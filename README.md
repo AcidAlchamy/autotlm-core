@@ -1,15 +1,15 @@
-# Drivon Core
+# AutoTLM Core
 
 **Read a car and push telemetry in a few lines.**
 
-Drivon Core is the open-source Arduino C++ library at the heart of the
-[Drivon](https://drivon.com) car-telemetry platform: OBD-II PIDs, trouble
+AutoTLM Core is the open-source Arduino C++ library at the heart of the
+[AutoTLM](https://autotlm.com) car-telemetry platform: OBD-II PIDs, trouble
 codes and VIN; GNSS; an IMU; and a road-proven cloud push — behind one clean
 facade, on hardware you can buy (or breadboard) today.
 
 ```cpp
-#include <Drivon.h>
-Drivon car;
+#include <AutoTLM.h>
+AutoTLM car;
 
 void setup() {
   car.begin();                                  // OBD + GNSS + IMU up
@@ -21,7 +21,7 @@ void setup() {
 void loop() {
   car.update();                                 // pump sensors + push
   if (car.obd().connected()) Serial.println(car.obd().rpm());
-  DrivonGPS g = car.gps();
+  AutoTLMGPS g = car.gps();
   if (g.fix) Serial.printf("%.5f, %.5f\n", g.lat, g.lng);
 }
 ```
@@ -47,16 +47,16 @@ on a real LTE hotspot:
 ## Supported boards
 
 Board selection is one `#define` before the include — sketches are otherwise
-identical on every board. Drivon runs on **your own hardware**: a plain ESP32
-(and, soon, our own Drivon Link board) is the first-class target.
+identical on every board. AutoTLM runs on **your own hardware**: a plain ESP32
+(and, soon, our own AutoTLM One board) is the first-class target.
 
 | Board | Define | What you get |
 |---|---|---|
-| **Generic ESP32 + CAN transceiver** | `DRIVON_BOARD_GENERIC_ESP32` (default on ESP32; what the examples ship with) | The primary target. Drivon speaks ISO 15765-4 itself over the ESP32's TWAI controller (500 kbps, 11-bit, ISO-TP multi-frame for VIN/DTCs), GNSS on UART2, optional MPU-6050 IMU. No third-party libraries needed. Pins configurable via `BoardGenericEsp32::Pins`. |
-| *Drivon Link* | *(coming)* | Our own purpose-built OBD-II unit. Same sketches, no changes. |
-| **Freematics ONE+** | `DRIVON_BOARD_FREEMATICS_ONEPLUS` | A compatibility board and capability benchmark — a commercial ESP32 OBD dongle we support so Drivon Link can be measured against (and surpass) it. OBD via its co-processor, GNSS (BE-220) on RX 26 @ 38400, ICM-42627 IMU, battery-voltage sense, status LED. Needs the [FreematicsPlus library](https://github.com/stanleyhuangyc/Freematics) — **note:** upstream needs small patches to build on arduino-esp32 3.x (`soc/gpio_struct.h` include; `esp_task_wdt_reconfigure`; the `ledcAttach` API). |
+| **Generic ESP32 + CAN transceiver** | `AUTOTLM_BOARD_GENERIC_ESP32` (default on ESP32; what the examples ship with) | The primary target. AutoTLM speaks ISO 15765-4 itself over the ESP32's TWAI controller (500 kbps, 11-bit, ISO-TP multi-frame for VIN/DTCs), GNSS on UART2, optional MPU-6050 IMU. No third-party libraries needed. Pins configurable via `BoardGenericEsp32::Pins`. |
+| *AutoTLM One* | *(coming)* | Our own purpose-built OBD-II unit. Same sketches, no changes. |
+| **Freematics ONE+** | `AUTOTLM_BOARD_FREEMATICS_ONEPLUS` | A compatibility board and capability benchmark — a commercial ESP32 OBD dongle we support so AutoTLM One can be measured against (and surpass) it. OBD via its co-processor, GNSS (BE-220) on RX 26 @ 38400, ICM-42627 IMU, battery-voltage sense, status LED. Needs the [FreematicsPlus library](https://github.com/stanleyhuangyc/Freematics) — **note:** upstream needs small patches to build on arduino-esp32 3.x (`soc/gpio_struct.h` include; `esp_task_wdt_reconfigure`; the `ledcAttach` API). |
 
-Custom hardware: subclass `DrivonHAL` (one small interface: OBD transport,
+Custom hardware: subclass `AutoTLMHAL` (one small interface: OBD transport,
 GNSS bytes, IMU, LED) and pass it to `car.begin(yourHal)`. Nothing else in
 the library knows what board it's on — which is exactly how our own boards
 plug in.
@@ -71,13 +71,13 @@ MPU-6050 on SDA 21 / SCL 22; LED GPIO2.
 `libraries/` folder, restart the IDE.
 
 ```
-git clone https://github.com/AcidAlchamy/drivon-core.git ~/Documents/Arduino/libraries/Drivon
+git clone https://github.com/AcidAlchamy/autotlm-core.git ~/Documents/Arduino/libraries/AutoTLM
 ```
 
 **arduino-cli:**
 
 ```
-arduino-cli compile --fqbn esp32:esp32:esp32 --library /path/to/drivon-core examples/01_HelloCar
+arduino-cli compile --fqbn esp32:esp32:esp32 --library /path/to/autotlm-core examples/01_HelloCar
 ```
 
 The examples compile as-is for the generic ESP32 board. For the Freematics
@@ -89,14 +89,14 @@ see the boards table) FreematicsPlus library:
 
 | Sketch | Shows |
 |---|---|
-| `01_HelloCar` | RPM + coolant + speed on the Serial Monitor — the Drivon "blink". |
+| `01_HelloCar` | RPM + coolant + speed on the Serial Monitor — the AutoTLM "blink". |
 | `02_GpsToSerial` | Streaming a GNSS fix (with optional raw-NMEA echo). |
 | `03_PushToCloud` | The full unit: OBD + GNSS + IMU → JSON frames → your HTTP ingest, 1/s. |
 | `04_ReadDTCs` | Decoding the check-engine light, new-code callback, clearing codes. |
 
 ## API overview
 
-**Facade (`Drivon car`)** — `begin()`, `begin(hal)`, `wifi(ssid, pass)`,
+**Facade (`AutoTLM car`)** — `begin()`, `begin(hal)`, `wifi(ssid, pass)`,
 `cloud(url, token, intervalMs)`, `update()`, `gps()`, `motion()`,
 `onDTC(cb)`, `frame()`, `deviceId(id)`, `printDiagnostics()`,
 `statusLed(on)`, `setLogStream(s)`.
@@ -106,11 +106,11 @@ see the boards table) FreematicsPlus library:
 `pidValue(pid)`, `supportedCount()`, `dtcCount()`, `dtcAt(i)`, `mil()`,
 `clearDTCs()`, `setPollInterval(ms)`.
 
-**GNSS (`car.gnss()`)** — `data()` → `DrivonGPS {fix, lat, lng, altM,
+**GNSS (`car.gnss()`)** — `data()` → `AutoTLMGPS {fix, lat, lng, altM,
 speedKph, course, hdop, sats, ageMs}`, `alive()`, `echoTo(stream)`,
 `onSentence(cb)`.
 
-**IMU (`car.imu()`)** — `data()` → `DrivonMotion {ax..az (g), gx..gz
+**IMU (`car.imu()`)** — `data()` → `AutoTLMMotion {ax..az (g), gx..gz
 (deg/s)}`, `available()`, `setSampleInterval(ms)`.
 
 **Net (`car.net()`)** — `wifiConnected()`, `rssi()`, `state()`, `pushOk()`,
@@ -121,11 +121,11 @@ a small key/value store for your own sketch (`putString`/`getString`,
 `putInt`/`getInt`).
 
 Values use SI units end to end: km/h, °C, kPa, g/s. (Dashboards convert for
-display; Drivon Dash shows mph/°F from the same frames.)
+display; AutoTLM Dash shows mph/°F from the same frames.)
 
 ## The telemetry frame
 
-`car.frame().toJson(...)` — and the cloud push — produce the Drivon frame
+`car.frame().toJson(...)` — and the cloud push — produce the AutoTLM frame
 format (every field the dashboards understand):
 
 ```json
@@ -141,14 +141,14 @@ format (every field the dashboards understand):
 ```
 
 PID map keys are uppercase mode-01 hex; values are normalized integers
-(RPM in rpm, temps in °C, percents 0–100 — see `src/core/DrivonPids.h`).
+(RPM in rpm, temps in °C, percents 0–100 — see `src/core/AutoTLMPids.h`).
 
 ## Roadmap
 
-- Drivon Link board support (same sketches, our hardware)
+- AutoTLM One board support (same sketches, our hardware)
 - Teensy 4.x HAL (FlexCAN) for radio-less CAN tools like the bench ECU emulator
 - Captive-portal WiFi provisioning module
-- Drivon Script on top of this API
+- TLMscript on top of this API
 
 ## License
 

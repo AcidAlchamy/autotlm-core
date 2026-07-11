@@ -1,8 +1,8 @@
 /*
- * DrivonNet.cpp — WiFi + plain-HTTP cloud push on a dedicated core.
- * Part of Drivon Core — MIT licensed.
+ * AutoTLMNet.cpp — WiFi + plain-HTTP cloud push on a dedicated core.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#include "DrivonNet.h"
+#include "AutoTLMNet.h"
 
 #include <string.h>
 
@@ -17,24 +17,24 @@
 // Heartbeat log line (verbose mode).
 #define DIAG_PRINT_MS 10000
 
-static void netTaskTrampoline(void* arg) { ((DrivonNet*)arg)->taskLoop(); }
+static void netTaskTrampoline(void* arg) { ((AutoTLMNet*)arg)->taskLoop(); }
 
-void DrivonNet::ensureMutex() {
+void AutoTLMNet::ensureMutex() {
   // Only ever called on the sketch core before the task exists (every task
   // launch goes through wifi()/cloud(), which call this first) — so the
   // lazy creation itself cannot race.
   if (!m_cfgMutex) m_cfgMutex = xSemaphoreCreateMutex();
 }
 
-void DrivonNet::lockCfg() const {
+void AutoTLMNet::lockCfg() const {
   if (m_cfgMutex) xSemaphoreTake(m_cfgMutex, portMAX_DELAY);
 }
 
-void DrivonNet::unlockCfg() const {
+void AutoTLMNet::unlockCfg() const {
   if (m_cfgMutex) xSemaphoreGive(m_cfgMutex);
 }
 
-void DrivonNet::wifi(const char* ssid, const char* pass) {
+void AutoTLMNet::wifi(const char* ssid, const char* pass) {
   if (!ssid || !ssid[0]) return;
   ensureMutex();
 
@@ -51,15 +51,15 @@ void DrivonNet::wifi(const char* ssid, const char* pass) {
   ensureTask();
 }
 
-void DrivonNet::cloud(const char* url, const char* token, uint32_t intervalMs) {
+void AutoTLMNet::cloud(const char* url, const char* token, uint32_t intervalMs) {
   if (!url) return;
   ensureMutex();
 
   // Parse http://host[:port]/path into locals first, then publish atomically.
   // TLS is refused by design: the handshake is what broke pushes over weak
   // cellular. A bearer token still guards the endpoint.
-  char host[DRIVON_NET_HOST_LEN] = "";
-  char path[DRIVON_NET_PATH_LEN] = "/";
+  char host[AUTOTLM_NET_HOST_LEN] = "";
+  char path[AUTOTLM_NET_PATH_LEN] = "/";
   uint16_t port = 80;
   bool wasHttps = false;
 
@@ -93,8 +93,8 @@ void DrivonNet::cloud(const char* url, const char* token, uint32_t intervalMs) {
   if (wasHttps) {
     port = 80;  // match the warning below — never plaintext at a TLS port
     if (m_log)
-      m_log->println("DRIVON: https:// requested but TLS is not supported (it stalls on weak "
-                     "cellular). Pushing plain HTTP on port 80 — point Drivon at an http:// ingest.");
+      m_log->println("AUTOTLM: https:// requested but TLS is not supported (it stalls on weak "
+                     "cellular). Pushing plain HTTP on port 80 — point AutoTLM at an http:// ingest.");
   }
   if (!host[0]) return;
 
@@ -114,7 +114,7 @@ void DrivonNet::cloud(const char* url, const char* token, uint32_t intervalMs) {
   ensureTask();
 }
 
-void DrivonNet::attach(DrivonFrameProvider provider, DrivonDiagSaver diagSaver, void* ctx) {
+void AutoTLMNet::attach(AutoTLMFrameProvider provider, AutoTLMDiagSaver diagSaver, void* ctx) {
   ensureMutex();
   lockCfg();
   // ctx first, provider last: the task treats a non-null provider as
@@ -125,25 +125,25 @@ void DrivonNet::attach(DrivonFrameProvider provider, DrivonDiagSaver diagSaver, 
   unlockCfg();
 }
 
-bool DrivonNet::wifiConnected() const { return WiFi.status() == WL_CONNECTED; }
+bool AutoTLMNet::wifiConnected() const { return WiFi.status() == WL_CONNECTED; }
 
-int DrivonNet::rssi() const { return wifiConnected() ? (int)WiFi.RSSI() : 0; }
+int AutoTLMNet::rssi() const { return wifiConnected() ? (int)WiFi.RSSI() : 0; }
 
-DrivonNetState DrivonNet::state() const {
-  if (!m_wifiWanted && !m_cloudWanted) return DRIVON_NET_DISABLED;
-  if (!wifiConnected()) return DRIVON_NET_OFFLINE;
-  if (m_lastPushMs != 0 && millis() - m_lastPushMs < 4000) return DRIVON_NET_STREAMING;
-  return DRIVON_NET_NO_PUSH;
+AutoTLMNetState AutoTLMNet::state() const {
+  if (!m_wifiWanted && !m_cloudWanted) return AUTOTLM_NET_DISABLED;
+  if (!wifiConnected()) return AUTOTLM_NET_OFFLINE;
+  if (m_lastPushMs != 0 && millis() - m_lastPushMs < 4000) return AUTOTLM_NET_STREAMING;
+  return AUTOTLM_NET_NO_PUSH;
 }
 
 // The whole network life runs here, pinned to core 0. Sensor code on core 1
 // can block on the car bus all it likes; pushes keep flowing.
-void DrivonNet::ensureTask() {
+void AutoTLMNet::ensureTask() {
   if (m_task) return;
-  xTaskCreatePinnedToCore(netTaskTrampoline, "drivon-net", 12288, this, 1, &m_task, 0);
+  xTaskCreatePinnedToCore(netTaskTrampoline, "autotlm-net", 12288, this, 1, &m_task, 0);
 }
 
-void DrivonNet::taskLoop() {
+void AutoTLMNet::taskLoop() {
   uint32_t lastPush = 0, lastWifiTry = 0, lastDiagSave = 0, lastDiagPrint = 0;
   for (;;) {
     const uint32_t now = millis();
@@ -155,12 +155,12 @@ void DrivonNet::taskLoop() {
     const uint32_t intervalMs = m_intervalMs;
     const bool reassoc = m_reassoc;
     m_reassoc = false;
-    char ssid[DRIVON_NET_SSID_LEN], pass[DRIVON_NET_PASS_LEN];
+    char ssid[AUTOTLM_NET_SSID_LEN], pass[AUTOTLM_NET_PASS_LEN];
     if (reassoc || (wifiWanted && WiFi.status() != WL_CONNECTED)) {
       memcpy(ssid, m_ssid, sizeof(ssid));
       memcpy(pass, m_pass, sizeof(pass));
     }
-    DrivonDiagSaver diagSaver = m_diagSaver;
+    AutoTLMDiagSaver diagSaver = m_diagSaver;
     void* ctx = m_ctx;
     unlockCfg();
 
@@ -200,7 +200,7 @@ void DrivonNet::taskLoop() {
 
 // Resolve once, remember, refresh every 5 min. DNS over weak cellular is the
 // single flakiest step of a push — never pay for it per-frame.
-void DrivonNet::resolveHost(const char* host) {
+void AutoTLMNet::resolveHost(const char* host) {
   IPAddress ip;
   if (WiFi.hostByName(host, ip)) {
     lockCfg();
@@ -217,15 +217,15 @@ void DrivonNet::resolveHost(const char* host) {
   }
 }
 
-void DrivonNet::pushFrame() {
+void AutoTLMNet::pushFrame() {
   // Work on a coherent copy of the endpoint config for this whole push.
   lockCfg();
-  char host[DRIVON_NET_HOST_LEN], path[DRIVON_NET_PATH_LEN], token[DRIVON_NET_TOKEN_LEN];
+  char host[AUTOTLM_NET_HOST_LEN], path[AUTOTLM_NET_PATH_LEN], token[AUTOTLM_NET_TOKEN_LEN];
   memcpy(host, m_host, sizeof(host));
   memcpy(path, m_path, sizeof(path));
   memcpy(token, m_token, sizeof(token));
   const uint16_t port = m_port;
-  DrivonFrameProvider provider = m_provider;
+  AutoTLMFrameProvider provider = m_provider;
   void* ctx = m_ctx;
   unlockCfg();
   if (!provider || !ctx || !host[0]) return;
@@ -308,22 +308,22 @@ void DrivonNet::pushFrame() {
 
 #else  // !ESP32 — no radio on this platform; everything reports "disabled".
 
-void DrivonNet::wifi(const char*, const char*) {}
-void DrivonNet::cloud(const char*, const char*, uint32_t) {}
-void DrivonNet::attach(DrivonFrameProvider provider, DrivonDiagSaver diagSaver, void* ctx) {
+void AutoTLMNet::wifi(const char*, const char*) {}
+void AutoTLMNet::cloud(const char*, const char*, uint32_t) {}
+void AutoTLMNet::attach(AutoTLMFrameProvider provider, AutoTLMDiagSaver diagSaver, void* ctx) {
   m_ctx = ctx;
   m_diagSaver = diagSaver;
   m_provider = provider;
 }
-bool DrivonNet::wifiConnected() const { return false; }
-int DrivonNet::rssi() const { return 0; }
-DrivonNetState DrivonNet::state() const { return DRIVON_NET_DISABLED; }
-void DrivonNet::taskLoop() {}
-void DrivonNet::ensureMutex() {}
-void DrivonNet::ensureTask() {}
-void DrivonNet::lockCfg() const {}
-void DrivonNet::unlockCfg() const {}
-void DrivonNet::pushFrame() {}
-void DrivonNet::resolveHost(const char*) {}
+bool AutoTLMNet::wifiConnected() const { return false; }
+int AutoTLMNet::rssi() const { return 0; }
+AutoTLMNetState AutoTLMNet::state() const { return AUTOTLM_NET_DISABLED; }
+void AutoTLMNet::taskLoop() {}
+void AutoTLMNet::ensureMutex() {}
+void AutoTLMNet::ensureTask() {}
+void AutoTLMNet::lockCfg() const {}
+void AutoTLMNet::unlockCfg() const {}
+void AutoTLMNet::pushFrame() {}
+void AutoTLMNet::resolveHost(const char*) {}
 
 #endif

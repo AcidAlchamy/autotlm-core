@@ -1,13 +1,13 @@
 /*
- * BoardGenericEsp32.h — DrivonHAL for a plain ESP32 + CAN transceiver.
+ * BoardGenericEsp32.h — AutoTLMHAL for a plain ESP32 + CAN transceiver.
  *
- * The "roll your own Drivon Link" board: any ESP32 dev module wired to a
+ * The "roll your own AutoTLM One" board: any ESP32 dev module wired to a
  * 3.3 V CAN transceiver (SN65HVD230 or similar) on the OBD-II port. Unlike
  * the ONE+ (which delegates OBD to a co-processor), this board speaks the
  * protocol itself: ISO 15765-4 over the ESP32's built-in TWAI controller at
  * 500 kbps / 11-bit — including ISO-TP multi-frame reassembly for VIN and
  * long DTC lists. Values are normalized with the shared rules in
- * DrivonPids.h, so telemetry is identical across boards.
+ * AutoTLMPids.h, so telemetry is identical across boards.
  *
  * Default wiring (all overridable via the Pins struct):
  *   CAN  TX GPIO5 -> transceiver D, RX GPIO4 -> transceiver R
@@ -16,13 +16,13 @@
  *   IMU  MPU-6050 on I2C: SDA GPIO21, SCL GPIO22
  *   LED  GPIO2 (most devkits' onboard LED)
  *
- * Header-only so the sketch-level DRIVON_BOARD_GENERIC_ESP32 define can
+ * Header-only so the sketch-level AUTOTLM_BOARD_GENERIC_ESP32 define can
  * select it.
  *
- * Part of Drivon Core — MIT licensed.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#ifndef DRIVON_BOARD_GENERIC_ESP32_H
-#define DRIVON_BOARD_GENERIC_ESP32_H
+#ifndef AUTOTLM_BOARD_GENERIC_ESP32_H
+#define AUTOTLM_BOARD_GENERIC_ESP32_H
 
 #if defined(ESP32)
 
@@ -30,19 +30,19 @@
 
 #include "driver/twai.h"
 
-#include "../core/DrivonPids.h"
-#include "DrivonHAL.h"
+#include "../core/AutoTLMPids.h"
+#include "AutoTLMHAL.h"
 
 // OBD-II over CAN: functional request id + the ECU response id window.
-#define DRIVON_OBD_REQ_ID 0x7DF
-#define DRIVON_OBD_RESP_MIN 0x7E8
-#define DRIVON_OBD_RESP_MAX 0x7EF
+#define AUTOTLM_OBD_REQ_ID 0x7DF
+#define AUTOTLM_OBD_RESP_MIN 0x7E8
+#define AUTOTLM_OBD_RESP_MAX 0x7EF
 // A real ECU answers in tens of ms; give slow ones some slack.
-#define DRIVON_OBD_TIMEOUT_MS 200
+#define AUTOTLM_OBD_TIMEOUT_MS 200
 
-#define DRIVON_MPU6050_ADDR 0x68
+#define AUTOTLM_MPU6050_ADDR 0x68
 
-class BoardGenericEsp32 : public DrivonHAL {
+class BoardGenericEsp32 : public AutoTLMHAL {
  public:
   /** Override any pin to match your wiring; defaults suit a devkit jig. */
   struct Pins {
@@ -110,7 +110,7 @@ class BoardGenericEsp32 : public DrivonHAL {
     if (n < 3 || resp[0] != 0x41 || resp[1] != pid) return false;
     const uint8_t A = resp[2];
     const uint8_t B = (n > 3) ? resp[3] : 0;
-    value = drivon::normalizePid(pid, A, B);
+    value = autotlm::normalizePid(pid, A, B);
     return true;
   }
 
@@ -159,13 +159,13 @@ class BoardGenericEsp32 : public DrivonHAL {
     return out > 0;
   }
 
-  // No analog battery sense on a bare devkit: DrivonOBD falls back to PID 0x42.
+  // No analog battery sense on a bare devkit: AutoTLMOBD falls back to PID 0x42.
   float obdBatteryVoltage() override { return NAN; }
 
   // -------------------------------------------------------------- raw CAN
   bool canAvailable() const override { return m_twaiUp; }
 
-  bool canRead(DrivonCanMsg& msg, uint32_t timeoutMs) override {
+  bool canRead(AutoTLMCanMsg& msg, uint32_t timeoutMs) override {
     if (!m_twaiUp) return false;
     twai_message_t rx;
     if (twai_receive(&rx, pdMS_TO_TICKS(timeoutMs)) != ESP_OK) return false;
@@ -176,7 +176,7 @@ class BoardGenericEsp32 : public DrivonHAL {
     return true;
   }
 
-  bool canWrite(const DrivonCanMsg& msg) override {
+  bool canWrite(const AutoTLMCanMsg& msg) override {
     if (!m_twaiUp && !twaiUp()) return false;
     twai_message_t tx = {};
     tx.identifier = msg.id;
@@ -199,7 +199,7 @@ class BoardGenericEsp32 : public DrivonHAL {
   bool imuBegin() override {
     Wire.begin(m_pins.imuSda, m_pins.imuScl);
     // Wake the MPU-6050 (it boots asleep) and check it acknowledges.
-    Wire.beginTransmission(DRIVON_MPU6050_ADDR);
+    Wire.beginTransmission(AUTOTLM_MPU6050_ADDR);
     Wire.write(0x6B);  // PWR_MGMT_1
     Wire.write(0x00);
     if (Wire.endTransmission() != 0) return false;
@@ -209,10 +209,10 @@ class BoardGenericEsp32 : public DrivonHAL {
 
   bool imuRead(float acc[3], float gyr[3]) override {
     if (!m_imuUp) return false;
-    Wire.beginTransmission(DRIVON_MPU6050_ADDR);
+    Wire.beginTransmission(AUTOTLM_MPU6050_ADDR);
     Wire.write(0x3B);  // ACCEL_XOUT_H
     if (Wire.endTransmission(false) != 0) return false;
-    if (Wire.requestFrom(DRIVON_MPU6050_ADDR, 14) != 14) return false;
+    if (Wire.requestFrom(AUTOTLM_MPU6050_ADDR, 14) != 14) return false;
     int16_t raw[7];
     for (int i = 0; i < 7; i++) {
       // Two named reads: C++ leaves the operand order of | unspecified, and
@@ -285,7 +285,7 @@ class BoardGenericEsp32 : public DrivonHAL {
     while (twai_receive(&rx, 0) == ESP_OK) {}
 
     twai_message_t tx = {};
-    tx.identifier = DRIVON_OBD_REQ_ID;
+    tx.identifier = AUTOTLM_OBD_REQ_ID;
     tx.data_length_code = 8;
     tx.data[0] = reqLen;  // single-frame PCI: length in the low nibble
     memcpy(&tx.data[1], req, reqLen);
@@ -294,14 +294,14 @@ class BoardGenericEsp32 : public DrivonHAL {
       return -1;
     }
 
-    uint32_t deadline = millis() + DRIVON_OBD_TIMEOUT_MS;
+    uint32_t deadline = millis() + AUTOTLM_OBD_TIMEOUT_MS;
     int total = -1;    // expected payload length (multi-frame)
     int have = 0;      // bytes collected so far
     uint8_t nextSeq = 1;
 
     while ((int32_t)(deadline - millis()) > 0) {
       if (twai_receive(&rx, pdMS_TO_TICKS(20)) != ESP_OK) continue;
-      if (rx.extd || rx.identifier < DRIVON_OBD_RESP_MIN || rx.identifier > DRIVON_OBD_RESP_MAX)
+      if (rx.extd || rx.identifier < AUTOTLM_OBD_RESP_MIN || rx.identifier > AUTOTLM_OBD_RESP_MAX)
         continue;
 
       const uint8_t pci = rx.data[0] >> 4;
@@ -358,4 +358,4 @@ class BoardGenericEsp32 : public DrivonHAL {
 };
 
 #endif // ESP32
-#endif // DRIVON_BOARD_GENERIC_ESP32_H
+#endif // AUTOTLM_BOARD_GENERIC_ESP32_H

@@ -7,16 +7,16 @@
  */
 // Board: the generic define compiles with no extra libraries; the ONE+ needs
 // the FreematicsPlus library installed (see README "Supported boards").
-#define DRIVON_BOARD_GENERIC_ESP32
-// #define DRIVON_BOARD_FREEMATICS_ONEPLUS
-#include <Drivon.h>
+#define AUTOTLM_BOARD_GENERIC_ESP32
+// #define AUTOTLM_BOARD_FREEMATICS_ONEPLUS
+#include <AutoTLM.h>
 
-Drivon car;
+AutoTLM car;
 
 void setup() {
   Serial.begin(115200);
   delay(400);
-  Serial.println("\n=== Drivon: GPS to Serial ===");
+  Serial.println("\n=== AutoTLM: GPS to Serial ===");
 
   car.begin();
   // car.gnss().echoTo(&Serial);  // raw NMEA passthrough for debugging
@@ -29,7 +29,7 @@ void loop() {
 
   if (millis() - lastPrint > 1000) {
     lastPrint = millis();
-    DrivonGPS g = car.gps();
+    AutoTLMGPS g = car.gps();
     if (g.fix) {
       Serial.printf("%.6f, %.6f  alt %.0f m  %.1f km/h  course %.0f  sats %d  hdop %.1f\n",
                     g.lat, g.lng, g.altM, g.speedKph, g.course, g.sats, g.hdop);

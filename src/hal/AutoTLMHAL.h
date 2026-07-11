@@ -1,17 +1,17 @@
 /*
- * DrivonHAL.h — the hardware abstraction layer at the heart of Drivon Core.
+ * AutoTLMHAL.h — the hardware abstraction layer at the heart of AutoTLM Core.
  *
- * Every Drivon module (OBD, GNSS, IMU, networking) talks to the car and the
+ * Every AutoTLM module (OBD, GNSS, IMU, networking) talks to the car and the
  * board through this interface only — never to pins, UARTs or CAN controllers
  * directly. That is what lets the exact same sketch run on a Freematics ONE+
- * today and on a Drivon Link board (or your own hardware) tomorrow: you swap
+ * today and on a AutoTLM One board (or your own hardware) tomorrow: you swap
  * the board class, nothing else.
  *
  * Shipping implementations:
  *   - BoardGenericEsp32       (hal/BoardGenericEsp32.h) — the primary target:
  *     our own ESP32 hardware wired to a 3.3 V CAN transceiver (SN65HVD230).
  *     Speaks ISO 15765-4 (ISO-TP over TWAI) itself, GNSS on a configurable
- *     UART, optional MPU-6050 IMU. This is what Drivon Link is built on.
+ *     UART, optional MPU-6050 IMU. This is what AutoTLM One is built on.
  *   - BoardFreematicsOnePlus  (hal/BoardFreematicsOnePlus.h) — a compatibility
  *     board and capability benchmark (a commercial ESP32 OBD dongle). OBD via
  *     its co-processor, GNSS on RX=GPIO26 @ 38400, ICM-42627 IMU.
@@ -20,15 +20,15 @@
  * has. Anything the board lacks can honestly return false; the modules treat
  * that as "not fitted" and carry on.
  *
- * Part of Drivon Core — MIT licensed.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#ifndef DRIVON_HAL_H
-#define DRIVON_HAL_H
+#ifndef AUTOTLM_HAL_H
+#define AUTOTLM_HAL_H
 
 #include <Arduino.h>
 
 /** A raw CAN frame, for power users doing bus work beside OBD polling. */
-struct DrivonCanMsg {
+struct AutoTLMCanMsg {
   uint32_t id;        ///< 11- or 29-bit identifier
   bool     extended;  ///< true = 29-bit id
   uint8_t  len;       ///< 0..8
@@ -40,13 +40,13 @@ struct DrivonCanMsg {
  * allowed to block briefly (they run on the sensor core); anything called
  * from the network task must not go through the HAL.
  */
-class DrivonHAL {
+class AutoTLMHAL {
  public:
-  virtual ~DrivonHAL() {}
+  virtual ~AutoTLMHAL() {}
 
   /**
    * Bring the board itself up (pins, co-processor link, I2C...). Called once
-   * from Drivon::begin(). Must NOT touch the vehicle bus — OBD is initialized
+   * from AutoTLM::begin(). Must NOT touch the vehicle bus — OBD is initialized
    * lazily so a stalled car bus can never block connectivity.
    * @return true if the board is usable (individual subsystems may still be absent)
    */
@@ -61,7 +61,7 @@ class DrivonHAL {
   // ------------------------------------------------------------------ OBD-II
   /**
    * Connect to the ECU (protocol negotiation / supported-PID discovery as the
-   * transport needs). Blocking; called lazily and re-tried by DrivonOBD.
+   * transport needs). Blocking; called lazily and re-tried by AutoTLMOBD.
    * @return true once the car answers
    */
   virtual bool obdInit() = 0;
@@ -70,7 +70,7 @@ class DrivonHAL {
   virtual void obdEnd() {}
 
   /**
-   * Read one mode-01 PID, normalized to the Drivon value convention
+   * Read one mode-01 PID, normalized to the AutoTLM value convention
    * (RPM in rpm, temperatures in °C, percents 0-100, speed in km/h — the
    * same integer normalization the Freematics co-processor applies, so all
    * boards report identical numbers).
@@ -94,7 +94,7 @@ class DrivonHAL {
 
   /**
    * Battery voltage. Boards with a voltage sense (the ONE+ co-processor)
-   * measure it directly; boards without return NAN and DrivonOBD falls back
+   * measure it directly; boards without return NAN and AutoTLMOBD falls back
    * to PID 0x42 (control module voltage).
    */
   virtual float obdBatteryVoltage() { return NAN; }
@@ -102,8 +102,8 @@ class DrivonHAL {
   // ---------------------------------------------------------------- raw CAN
   /** Optional raw CAN access. Boards route this through the same controller as OBD. */
   virtual bool canAvailable() const { return false; }
-  virtual bool canRead(DrivonCanMsg& msg, uint32_t timeoutMs) { (void)msg; (void)timeoutMs; return false; }
-  virtual bool canWrite(const DrivonCanMsg& msg) { (void)msg; return false; }
+  virtual bool canRead(AutoTLMCanMsg& msg, uint32_t timeoutMs) { (void)msg; (void)timeoutMs; return false; }
+  virtual bool canWrite(const AutoTLMCanMsg& msg) { (void)msg; return false; }
 
   // ------------------------------------------------------------------- GNSS
   /** Power + open the GNSS UART. @return true if the port opened */
@@ -128,4 +128,4 @@ class DrivonHAL {
   virtual void led(bool on) { (void)on; }
 };
 
-#endif // DRIVON_HAL_H
+#endif // AUTOTLM_HAL_H

@@ -1,21 +1,21 @@
 /*
- * DrivonGNSS.h — GNSS module: NMEA (GGA + RMC) → position, speed, course.
+ * AutoTLMGNSS.h — GNSS module: NMEA (GGA + RMC) → position, speed, course.
  *
  * The HAL supplies raw NMEA bytes (each board knows its own UART wiring — on
  * the Freematics ONE+ that's the hard-won RX=GPIO26 @ 38400 with TX/RX
  * swapped vs the factory default); this module parses them. Sentences are
  * checksum-validated, so serial garbage can't corrupt a fix.
  *
- * Part of Drivon Core — MIT licensed.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#ifndef DRIVON_GNSS_H
-#define DRIVON_GNSS_H
+#ifndef AUTOTLM_GNSS_H
+#define AUTOTLM_GNSS_H
 
 #include <Arduino.h>
-#include "../hal/DrivonHAL.h"
+#include "../hal/AutoTLMHAL.h"
 
 /** A GNSS snapshot, the struct returned by car.gps(). */
-struct DrivonGPS {
+struct AutoTLMGPS {
   bool   fix;       ///< true when the position is valid
   double lat;       ///< latitude, decimal degrees
   double lng;       ///< longitude, decimal degrees
@@ -28,18 +28,18 @@ struct DrivonGPS {
 };
 
 /** Raw-sentence hook for power users (loggers, extra parsers). */
-typedef void (*DrivonNmeaCallback)(const char* sentence);
+typedef void (*AutoTLMNmeaCallback)(const char* sentence);
 
-class DrivonGNSS {
+class AutoTLMGNSS {
  public:
   /** Power the module and open its UART. */
-  bool begin(DrivonHAL& hal);
+  bool begin(AutoTLMHAL& hal);
 
-  /** Drain the UART and parse complete sentences. Called from Drivon::update(). */
+  /** Drain the UART and parse complete sentences. Called from AutoTLM::update(). */
   void tick();
 
   /** Latest fix data (valid whenever .fix is true). */
-  DrivonGPS data() const;
+  AutoTLMGPS data() const;
 
   /** True once at least one checksum-valid sentence has arrived. */
   bool alive() const { return m_alive; }
@@ -48,15 +48,15 @@ class DrivonGNSS {
   void echoTo(Stream* s) { m_echo = s; }
 
   /** Get each complete, checksum-valid sentence (without CR/LF). */
-  void onSentence(DrivonNmeaCallback cb) { m_cb = cb; }
+  void onSentence(AutoTLMNmeaCallback cb) { m_cb = cb; }
 
  private:
   void parse(char* s);
   static double coord(const char* v, char hemi);
 
-  DrivonHAL* m_hal = nullptr;
+  AutoTLMHAL* m_hal = nullptr;
   Stream* m_echo = nullptr;
-  DrivonNmeaCallback m_cb = nullptr;
+  AutoTLMNmeaCallback m_cb = nullptr;
 
   char m_line[120];
   int m_lineLen = 0;
@@ -69,4 +69,4 @@ class DrivonGNSS {
   uint32_t m_lastSentenceMs = 0;
 };
 
-#endif // DRIVON_GNSS_H
+#endif // AUTOTLM_GNSS_H

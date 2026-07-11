@@ -1,10 +1,10 @@
 /*
- * Drivon.h — the Drivon Core facade.
+ * AutoTLM.h — the AutoTLM Core facade.
  *
  * Read a car and push telemetry in a few lines:
  *
- *   #include <Drivon.h>
- *   Drivon car;
+ *   #include <AutoTLM.h>
+ *   AutoTLM car;
  *
  *   void setup() {
  *     car.begin();                                  // OBD + GNSS + IMU up
@@ -16,33 +16,33 @@
  *   void loop() {
  *     car.update();                                 // pump sensors + push
  *     if (car.obd().connected()) Serial.println(car.obd().rpm());
- *     DrivonGPS g = car.gps();
+ *     AutoTLMGPS g = car.gps();
  *     if (g.fix) Serial.printf("%.5f, %.5f\n", g.lat, g.lng);
  *   }
  *
  * Board selection is a compile-time define placed BEFORE the include:
  *
- *   #define DRIVON_BOARD_GENERIC_ESP32        // plain ESP32 + CAN transceiver (primary)
- *   #define DRIVON_BOARD_FREEMATICS_ONEPLUS   // Freematics ONE+ (compat / benchmark)
- *   #include <Drivon.h>
+ *   #define AUTOTLM_BOARD_GENERIC_ESP32        // plain ESP32 + CAN transceiver (primary)
+ *   #define AUTOTLM_BOARD_FREEMATICS_ONEPLUS   // Freematics ONE+ (compat / benchmark)
+ *   #include <AutoTLM.h>
  *
  * With no define, an ESP32 target defaults to the generic board. Custom
- * hardware: subclass DrivonHAL and pass it to car.begin(yourHal).
+ * hardware: subclass AutoTLMHAL and pass it to car.begin(yourHal).
  *
- * Part of Drivon Core — MIT licensed.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#ifndef DRIVON_H
-#define DRIVON_H
+#ifndef AUTOTLM_H
+#define AUTOTLM_H
 
 #include <Arduino.h>
 
-#include "DrivonFrame.h"
-#include "core/DrivonConfig.h"
-#include "gnss/DrivonGNSS.h"
-#include "hal/DrivonHAL.h"
-#include "imu/DrivonIMU.h"
-#include "net/DrivonNet.h"
-#include "obd/DrivonOBD.h"
+#include "AutoTLMFrame.h"
+#include "core/AutoTLMConfig.h"
+#include "gnss/AutoTLMGNSS.h"
+#include "hal/AutoTLMHAL.h"
+#include "imu/AutoTLMIMU.h"
+#include "net/AutoTLMNet.h"
+#include "obd/AutoTLMOBD.h"
 
 #if defined(ESP32)
 #include <freertos/FreeRTOS.h>
@@ -50,22 +50,22 @@
 #endif
 
 /**
- * The Drivon facade: one object that owns the HAL, all modules, the live
+ * The AutoTLM facade: one object that owns the HAL, all modules, the live
  * telemetry frame and the status LED. Beginner API on the facade itself;
  * power users reach through obd()/gnss()/imu()/net()/config().
  */
-class Drivon {
+class AutoTLM {
  public:
   /**
-   * Bring the unit up on the board selected by the DRIVON_BOARD_* define
+   * Bring the unit up on the board selected by the AUTOTLM_BOARD_* define
    * (defined inline at the bottom of this header). GNSS + IMU start now; the
    * ECU connection is deliberately lazy so a stalled car bus never blocks
    * connectivity.
    */
   bool begin();
 
-  /** Bring the unit up on your own DrivonHAL implementation. */
-  bool begin(DrivonHAL& hal);
+  /** Bring the unit up on your own AutoTLMHAL implementation. */
+  bool begin(AutoTLMHAL& hal);
 
   /**
    * Connect to a WiFi network (non-blocking; a core-0 task keeps it alive
@@ -76,7 +76,7 @@ class Drivon {
 
   /**
    * Stream telemetry to an HTTP ingest endpoint (plain HTTP by design — see
-   * DrivonNet.h for why TLS is refused). Runs on core 0, independent of
+   * AutoTLMNet.h for why TLS is refused). Runs on core 0, independent of
    * sensor reads.
    */
   void cloud(const char* url, const char* token, uint32_t intervalMs = 1000);
@@ -89,22 +89,22 @@ class Drivon {
 
   // ------------------------------------------------------------ shortcuts
   /** Latest GNSS fix snapshot. */
-  DrivonGPS gps() { return m_gnss.data(); }
+  AutoTLMGPS gps() { return m_gnss.data(); }
   /** Latest motion snapshot. */
-  DrivonMotion motion() { return m_imu.data(); }
+  AutoTLMMotion motion() { return m_imu.data(); }
   /** Fired once per newly-appearing trouble code ("P0171"). */
-  void onDTC(DrivonDTCCallback cb) { m_obd.onDTC(cb); }
+  void onDTC(AutoTLMDTCCallback cb) { m_obd.onDTC(cb); }
 
   // -------------------------------------------------------------- modules
-  DrivonOBD& obd() { return m_obd; }
-  DrivonGNSS& gnss() { return m_gnss; }
-  DrivonIMU& imu() { return m_imu; }
-  DrivonNet& net() { return m_net; }
-  DrivonConfig& config() { return m_config; }
+  AutoTLMOBD& obd() { return m_obd; }
+  AutoTLMGNSS& gnss() { return m_gnss; }
+  AutoTLMIMU& imu() { return m_imu; }
+  AutoTLMNet& net() { return m_net; }
+  AutoTLMConfig& config() { return m_config; }
 
   // ---------------------------------------------------------------- frame
   /** Coherent copy of the current telemetry frame (what the cloud receives). */
-  DrivonFrame frame();
+  AutoTLMFrame frame();
   /** Override the unit id reported in telemetry (default: the chip id). */
   void deviceId(const char* id);
 
@@ -129,7 +129,7 @@ class Drivon {
   void setLogStream(Stream* s);
 
   // Internal: snapshot + diag-save hooks handed to the net task.
-  void snapshotFrame(DrivonFrame& out);
+  void snapshotFrame(AutoTLMFrame& out);
   void saveDiagnostics();
 
  private:
@@ -138,15 +138,15 @@ class Drivon {
   void lock();
   void unlock();
 
-  DrivonHAL* m_hal = nullptr;
-  DrivonOBD m_obd;
-  DrivonGNSS m_gnss;
-  DrivonIMU m_imu;
-  DrivonNet m_net;
-  DrivonConfig m_config;
+  AutoTLMHAL* m_hal = nullptr;
+  AutoTLMOBD m_obd;
+  AutoTLMGNSS m_gnss;
+  AutoTLMIMU m_imu;
+  AutoTLMNet m_net;
+  AutoTLMConfig m_config;
 
-  DrivonFrame m_frame;
-  char m_idOverride[DRIVON_ID_LEN] = "";
+  AutoTLMFrame m_frame;
+  char m_idOverride[AUTOTLM_ID_LEN] = "";
   uint32_t m_lastCompose = 0;
   uint32_t m_maxLoopUs = 0;
   bool m_ledEnabled = true;
@@ -159,27 +159,27 @@ class Drivon {
 };
 
 // ---------------------------------------------------------------------------
-// Board auto-selection. Header-only on purpose: the sketch's DRIVON_BOARD_*
+// Board auto-selection. Header-only on purpose: the sketch's AUTOTLM_BOARD_*
 // define is only visible in the sketch's own translation unit, so the chosen
 // board implementation must ride along in this header rather than live in a
 // library .cpp file.
 // ---------------------------------------------------------------------------
-#if defined(DRIVON_BOARD_FREEMATICS_ONEPLUS)
+#if defined(AUTOTLM_BOARD_FREEMATICS_ONEPLUS)
 #include "hal/BoardFreematicsOnePlus.h"
-#define DRIVON_DEFAULT_BOARD BoardFreematicsOnePlus
-#elif defined(DRIVON_BOARD_GENERIC_ESP32) || defined(ESP32)
+#define AUTOTLM_DEFAULT_BOARD BoardFreematicsOnePlus
+#elif defined(AUTOTLM_BOARD_GENERIC_ESP32) || defined(ESP32)
 #include "hal/BoardGenericEsp32.h"
-#define DRIVON_DEFAULT_BOARD BoardGenericEsp32
+#define AUTOTLM_DEFAULT_BOARD BoardGenericEsp32
 #endif
 
-inline bool Drivon::begin() {
-#if defined(DRIVON_DEFAULT_BOARD)
-  static DRIVON_DEFAULT_BOARD s_board;
+inline bool AutoTLM::begin() {
+#if defined(AUTOTLM_DEFAULT_BOARD)
+  static AUTOTLM_DEFAULT_BOARD s_board;
   return begin(s_board);
 #else
-#warning "No Drivon board for this target — call car.begin(yourHal) with a custom DrivonHAL."
+#warning "No AutoTLM board for this target — call car.begin(yourHal) with a custom AutoTLMHAL."
   return false;
 #endif
 }
 
-#endif // DRIVON_H
+#endif // AUTOTLM_H

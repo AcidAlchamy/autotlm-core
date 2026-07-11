@@ -1,9 +1,9 @@
 /*
- * BoardFreematicsOnePlus.h — DrivonHAL for the Freematics ONE+ (ESP32).
+ * BoardFreematicsOnePlus.h — AutoTLMHAL for the Freematics ONE+ (ESP32).
  *
  * A compatibility board and capability benchmark: the ONE+ is a commercial
- * ESP32 OBD dongle we support so Drivon's own hardware can be measured
- * against it. Drivon Link itself is built on BoardGenericEsp32, not this.
+ * ESP32 OBD dongle we support so AutoTLM's own hardware can be measured
+ * against it. AutoTLM One itself is built on BoardGenericEsp32, not this.
  *
  * The hardware recipe:
  *  - OBD-II via the co-processor link (FreematicsPlus COBD) — protocol
@@ -14,26 +14,26 @@
  *  - IMU: ICM-42627 over I2C.
  *  - Status LED on GPIO4.
  *
- * Header-only so the sketch-level DRIVON_BOARD_FREEMATICS_ONEPLUS define can
+ * Header-only so the sketch-level AUTOTLM_BOARD_FREEMATICS_ONEPLUS define can
  * select it. Requires the FreematicsPlus library (the arduino-esp32 3.x
  * patched copy lives in the volvo-telematics repo under tools/Freematics).
  *
- * Part of Drivon Core — MIT licensed.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#ifndef DRIVON_BOARD_FREEMATICS_ONEPLUS_H
-#define DRIVON_BOARD_FREEMATICS_ONEPLUS_H
+#ifndef AUTOTLM_BOARD_FREEMATICS_ONEPLUS_H
+#define AUTOTLM_BOARD_FREEMATICS_ONEPLUS_H
 
 #include <FreematicsPlus.h>
 
-#include "DrivonHAL.h"
+#include "AutoTLMHAL.h"
 
 // The BE-220's real wiring (found the hard way; see repo history).
-#define DRIVON_ONEPLUS_GNSS_RX 26
-#define DRIVON_ONEPLUS_GNSS_BAUD 38400
-#define DRIVON_ONEPLUS_GNSS_VCC 12
+#define AUTOTLM_ONEPLUS_GNSS_RX 26
+#define AUTOTLM_ONEPLUS_GNSS_BAUD 38400
+#define AUTOTLM_ONEPLUS_GNSS_VCC 12
 // PIN_LED (GPIO4) comes from FreematicsPlus.h.
 
-class BoardFreematicsOnePlus : public DrivonHAL {
+class BoardFreematicsOnePlus : public AutoTLMHAL {
  public:
   BoardFreematicsOnePlus() : m_gnss(1) {}
 
@@ -97,13 +97,13 @@ class BoardFreematicsOnePlus : public DrivonHAL {
 
   // ----------------------------------------------------------------- GNSS
   bool gnssBegin() override {
-    m_gnss.begin(DRIVON_ONEPLUS_GNSS_BAUD, SERIAL_8N1, DRIVON_ONEPLUS_GNSS_RX, -1);
+    m_gnss.begin(AUTOTLM_ONEPLUS_GNSS_BAUD, SERIAL_8N1, AUTOTLM_ONEPLUS_GNSS_RX, -1);
     return true;
   }
 
   void gnssPower(bool on) override {
-    pinMode(DRIVON_ONEPLUS_GNSS_VCC, OUTPUT);
-    digitalWrite(DRIVON_ONEPLUS_GNSS_VCC, on ? HIGH : LOW);
+    pinMode(AUTOTLM_ONEPLUS_GNSS_VCC, OUTPUT);
+    digitalWrite(AUTOTLM_ONEPLUS_GNSS_VCC, on ? HIGH : LOW);
   }
 
   int gnssAvailable() override { return m_gnss.available(); }
@@ -138,4 +138,4 @@ class BoardFreematicsOnePlus : public DrivonHAL {
   char m_devType[12] = "16";
 };
 
-#endif // DRIVON_BOARD_FREEMATICS_ONEPLUS_H
+#endif // AUTOTLM_BOARD_FREEMATICS_ONEPLUS_H

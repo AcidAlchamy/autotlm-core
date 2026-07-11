@@ -12,9 +12,9 @@
  */
 // Board: the generic define compiles with no extra libraries; the ONE+ needs
 // the FreematicsPlus library installed (see README "Supported boards").
-#define DRIVON_BOARD_GENERIC_ESP32
-// #define DRIVON_BOARD_FREEMATICS_ONEPLUS
-#include <Drivon.h>
+#define AUTOTLM_BOARD_GENERIC_ESP32
+// #define AUTOTLM_BOARD_FREEMATICS_ONEPLUS
+#include <AutoTLM.h>
 
 // Your hotspot + ingest endpoint. Plain http:// by design — TLS handshakes
 // stall on weak cellular; the bearer token still authenticates every POST.
@@ -23,12 +23,12 @@
 #define INGEST_URL  "http://yourserver.com/api/telemetry_ingest.php"
 #define INGEST_TOKEN "your-ingest-token"
 
-Drivon car;
+AutoTLM car;
 
 void setup() {
   Serial.begin(115200);
   delay(400);
-  Serial.println("\n=== Drivon: Push to Cloud ===");
+  Serial.println("\n=== AutoTLM: Push to Cloud ===");
 
   car.begin();
   car.wifi(WIFI_SSID, WIFI_PASS);        // reconnects forever on its own

@@ -1,5 +1,5 @@
 /*
- * DrivonConfig.h — NVS-backed settings + persistent field diagnostics.
+ * AutoTLMConfig.h — NVS-backed settings + persistent field diagnostics.
  *
  * Two jobs:
  *  1. Remember settings (WiFi credentials, user keys) across power cycles.
@@ -7,10 +7,10 @@
  *     so a failure out on the road is readable over USB back at the desk
  *     ("DIAG PREV-SESSION: pushOk=812 pushFail=3 lastHttp=200 ...").
  *
- * Part of Drivon Core — MIT licensed.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#ifndef DRIVON_CONFIG_H
-#define DRIVON_CONFIG_H
+#ifndef AUTOTLM_CONFIG_H
+#define AUTOTLM_CONFIG_H
 
 #include <Arduino.h>
 
@@ -19,7 +19,7 @@
 #endif
 
 /** Health counters persisted to NVS (one snapshot per session). */
-struct DrivonDiag {
+struct AutoTLMDiag {
   uint32_t pushOk;     ///< successful cloud pushes
   uint32_t pushFail;   ///< failed cloud pushes
   int32_t  lastHttp;   ///< last HTTP status (-1 connect fail, -2 no response)
@@ -33,7 +33,7 @@ struct DrivonDiag {
  * Settings + diagnostics store. All methods are safe no-ops on platforms
  * without NVS so board-agnostic code can call them unconditionally.
  */
-class DrivonConfig {
+class AutoTLMConfig {
  public:
   /**
    * Open the store, bump the boot counter and capture the previous session's
@@ -49,9 +49,9 @@ class DrivonConfig {
 
   // ---------------------------------------------------------- diagnostics
   /** Counters recorded by the previous session (what happened on the drive). */
-  const DrivonDiag& prevSession() const { return m_prev; }
+  const AutoTLMDiag& prevSession() const { return m_prev; }
   /** Persist the current session's counters. Called ~every 20 s by the net task. */
-  void saveDiag(const DrivonDiag& d);
+  void saveDiag(const AutoTLMDiag& d);
   /** Print the previous session's counters, e.g. at boot. */
   void printPrevSession(Stream& out) const;
 
@@ -64,7 +64,7 @@ class DrivonConfig {
   int32_t getInt(const char* key, int32_t fallback = 0);
 
  private:
-  DrivonDiag m_prev = {};
+  AutoTLMDiag m_prev = {};
   bool m_up = false;
 #if defined(ESP32)
   Preferences m_prefs;  ///< user + wifi namespace
@@ -72,4 +72,4 @@ class DrivonConfig {
 #endif
 };
 
-#endif // DRIVON_CONFIG_H
+#endif // AUTOTLM_CONFIG_H

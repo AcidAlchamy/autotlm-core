@@ -8,16 +8,16 @@
  */
 // Board: the generic define compiles with no extra libraries; the ONE+ needs
 // the FreematicsPlus library installed (see README "Supported boards").
-#define DRIVON_BOARD_GENERIC_ESP32
-// #define DRIVON_BOARD_FREEMATICS_ONEPLUS
-#include <Drivon.h>
+#define AUTOTLM_BOARD_GENERIC_ESP32
+// #define AUTOTLM_BOARD_FREEMATICS_ONEPLUS
+#include <AutoTLM.h>
 
-Drivon car;
+AutoTLM car;
 
 void setup() {
   Serial.begin(115200);
   delay(400);
-  Serial.println("\n=== Drivon: Read DTCs ===");
+  Serial.println("\n=== AutoTLM: Read DTCs ===");
   Serial.println("(send 'c' to clear stored codes)");
 
   car.begin();

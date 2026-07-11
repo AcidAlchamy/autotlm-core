@@ -1,13 +1,13 @@
 /*
- * DrivonFrame.cpp — frame reset + JSON serialization.
- * Part of Drivon Core — MIT licensed.
+ * AutoTLMFrame.cpp — frame reset + JSON serialization.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#include "DrivonFrame.h"
+#include "AutoTLMFrame.h"
 
 #include <stdarg.h>
 #include <string.h>
 
-void DrivonFrame::clear() {
+void AutoTLMFrame::clear() {
   memset(this, 0, sizeof(*this));
   rssi = 0;
   volts = 0.0f;
@@ -39,7 +39,7 @@ static void jstr(char* buf, size_t cap, size_t& len, const char* s) {
   }
 }
 
-size_t DrivonFrame::toJson(char* buf, size_t cap) const {
+size_t AutoTLMFrame::toJson(char* buf, size_t cap) const {
   if (!buf || cap < 2) return 0;
   size_t len = 0;
 

@@ -1,5 +1,5 @@
 /*
- * DrivonNet.h — WiFi + cloud telemetry push.
+ * AutoTLMNet.h — WiFi + cloud telemetry push.
  *
  * This module encodes the connectivity lessons that made the platform work
  * in a moving car; they are deliberate design, not shortcuts:
@@ -20,13 +20,13 @@
  *    so they are safe to call at any time, from setup() or years into
  *    uptime.
  *
- * Part of Drivon Core — MIT licensed.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#ifndef DRIVON_NET_H
-#define DRIVON_NET_H
+#ifndef AUTOTLM_NET_H
+#define AUTOTLM_NET_H
 
 #include <Arduino.h>
-#include "../DrivonFrame.h"
+#include "../AutoTLMFrame.h"
 
 #if defined(ESP32)
 #include <WiFi.h>
@@ -36,27 +36,27 @@
 #endif
 
 /** Copies a coherent snapshot of the live frame into `out`. */
-typedef void (*DrivonFrameProvider)(void* ctx, DrivonFrame& out);
+typedef void (*AutoTLMFrameProvider)(void* ctx, AutoTLMFrame& out);
 /** Called every ~20 s from the network task so the owner can persist diagnostics. */
-typedef void (*DrivonDiagSaver)(void* ctx);
+typedef void (*AutoTLMDiagSaver)(void* ctx);
 
 /** Connectivity state, used by the status-LED convention. */
-enum DrivonNetState {
-  DRIVON_NET_DISABLED,   ///< neither wifi() nor cloud() ever called
-  DRIVON_NET_OFFLINE,    ///< WiFi not associated
-  DRIVON_NET_NO_PUSH,    ///< WiFi up but pushes failing / none recent
-  DRIVON_NET_STREAMING,  ///< pushes landing
+enum AutoTLMNetState {
+  AUTOTLM_NET_DISABLED,   ///< neither wifi() nor cloud() ever called
+  AUTOTLM_NET_OFFLINE,    ///< WiFi not associated
+  AUTOTLM_NET_NO_PUSH,    ///< WiFi up but pushes failing / none recent
+  AUTOTLM_NET_STREAMING,  ///< pushes landing
 };
 
 // Config buffer sizes. The token is sized for real-world bearer tokens
 // (JWTs routinely exceed 200 chars).
-#define DRIVON_NET_SSID_LEN 33
-#define DRIVON_NET_PASS_LEN 65
-#define DRIVON_NET_HOST_LEN 96
-#define DRIVON_NET_PATH_LEN 160
-#define DRIVON_NET_TOKEN_LEN 256
+#define AUTOTLM_NET_SSID_LEN 33
+#define AUTOTLM_NET_PASS_LEN 65
+#define AUTOTLM_NET_HOST_LEN 96
+#define AUTOTLM_NET_PATH_LEN 160
+#define AUTOTLM_NET_TOKEN_LEN 256
 
-class DrivonNet {
+class AutoTLMNet {
  public:
   /**
    * Publish WiFi credentials; the core-0 task associates and reconnects
@@ -74,8 +74,8 @@ class DrivonNet {
    */
   void cloud(const char* url, const char* token, uint32_t intervalMs = 1000);
 
-  /** Wire the frame source + diag persistence (done by the Drivon facade). */
-  void attach(DrivonFrameProvider provider, DrivonDiagSaver diagSaver, void* ctx);
+  /** Wire the frame source + diag persistence (done by the AutoTLM facade). */
+  void attach(AutoTLMFrameProvider provider, AutoTLMDiagSaver diagSaver, void* ctx);
 
   // ------------------------------------------------------------- status
   bool wifiConnected() const;
@@ -85,7 +85,7 @@ class DrivonNet {
    * sketch that manages WiFi itself but uses cloud() still reads STREAMING
    * while pushes land).
    */
-  DrivonNetState state() const;
+  AutoTLMNetState state() const;
   uint32_t pushOk() const { return m_pushOk; }
   uint32_t pushFail() const { return m_pushFail; }
   int lastHttp() const { return m_lastHttp; }          ///< -1 connect fail, -2 no response
@@ -110,20 +110,20 @@ class DrivonNet {
 
   // ---- configuration (written by sketch core, read by the task; every
   // ---- access goes through the config mutex) ----
-  char m_ssid[DRIVON_NET_SSID_LEN] = "";
-  char m_pass[DRIVON_NET_PASS_LEN] = "";
+  char m_ssid[AUTOTLM_NET_SSID_LEN] = "";
+  char m_pass[AUTOTLM_NET_PASS_LEN] = "";
   bool m_wifiWanted = false;
   bool m_reassoc = false;   ///< task should (re)run WiFi.begin with fresh creds
 
-  char m_host[DRIVON_NET_HOST_LEN] = "";
-  char m_path[DRIVON_NET_PATH_LEN] = "/";
-  char m_token[DRIVON_NET_TOKEN_LEN] = "";
+  char m_host[AUTOTLM_NET_HOST_LEN] = "";
+  char m_path[AUTOTLM_NET_PATH_LEN] = "/";
+  char m_token[AUTOTLM_NET_TOKEN_LEN] = "";
   uint16_t m_port = 80;
   uint32_t m_intervalMs = 1000;
   bool m_cloudWanted = false;
 
-  DrivonFrameProvider m_provider = nullptr;
-  DrivonDiagSaver m_diagSaver = nullptr;
+  AutoTLMFrameProvider m_provider = nullptr;
+  AutoTLMDiagSaver m_diagSaver = nullptr;
   void* m_ctx = nullptr;
 
   // ---- live stats (written only by the task; plain reads elsewhere) ----
@@ -140,9 +140,9 @@ class DrivonNet {
   IPAddress m_ip;             // task-owned DNS cache
   bool m_haveIp = false;      // (cloud() invalidates it under the mutex)
   uint32_t m_ipAt = 0;
-  DrivonFrame m_snapshot;     // task-owned copy (never touched by core 1)
+  AutoTLMFrame m_snapshot;     // task-owned copy (never touched by core 1)
   char m_json[2048];
 #endif
 };
 
-#endif // DRIVON_NET_H
+#endif // AUTOTLM_NET_H

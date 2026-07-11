@@ -1,19 +1,19 @@
 /*
- * Drivon.cpp — facade implementation (100% board-agnostic).
- * Part of Drivon Core — MIT licensed.
+ * AutoTLM.cpp — facade implementation (100% board-agnostic).
+ * Part of AutoTLM Core — MIT licensed.
  */
-#include "Drivon.h"
+#include "AutoTLM.h"
 
 // Refresh the shared frame at most this often; the copy under the lock is
 // cheap but there is no point doing it at loop() speed for a 1 Hz push.
 #define COMPOSE_MS 100
 
-static void frameProviderThunk(void* ctx, DrivonFrame& out) {
-  ((Drivon*)ctx)->snapshotFrame(out);
+static void frameProviderThunk(void* ctx, AutoTLMFrame& out) {
+  ((AutoTLM*)ctx)->snapshotFrame(out);
 }
-static void diagSaverThunk(void* ctx) { ((Drivon*)ctx)->saveDiagnostics(); }
+static void diagSaverThunk(void* ctx) { ((AutoTLM*)ctx)->saveDiagnostics(); }
 
-bool Drivon::begin(DrivonHAL& hal) {
+bool AutoTLM::begin(AutoTLMHAL& hal) {
   m_hal = &hal;
 
 #if defined(ESP32)
@@ -24,7 +24,7 @@ bool Drivon::begin(DrivonHAL& hal) {
   if (m_log) m_config.printPrevSession(*m_log);
 
   const bool boardOk = m_hal->begin();
-  if (m_log) m_log->printf("DRIVON:%s board=%s\n", boardOk ? "OK" : "BOARD-FAIL", m_hal->boardId());
+  if (m_log) m_log->printf("AUTOTLM:%s board=%s\n", boardOk ? "OK" : "BOARD-FAIL", m_hal->boardId());
 
   // Device identity: a deviceId() override wins (even one set before
   // begin()); otherwise board type + chip id. Written under the lock — the
@@ -61,7 +61,7 @@ bool Drivon::begin(DrivonHAL& hal) {
   return boardOk;
 }
 
-void Drivon::wifi(const char* ssid, const char* pass) {
+void AutoTLM::wifi(const char* ssid, const char* pass) {
   char savedSsid[33], savedPass[65];
   if (ssid && ssid[0]) {
     // Fresh credentials win and are persisted (so the unit reconnects on its
@@ -76,11 +76,11 @@ void Drivon::wifi(const char* ssid, const char* pass) {
   }
 }
 
-void Drivon::cloud(const char* url, const char* token, uint32_t intervalMs) {
+void AutoTLM::cloud(const char* url, const char* token, uint32_t intervalMs) {
   m_net.cloud(url, token, intervalMs);
 }
 
-void Drivon::update() {
+void AutoTLM::update() {
   if (!m_hal) return;
   const uint32_t t0 = micros();
 
@@ -101,9 +101,9 @@ void Drivon::update() {
 
 // Copy the modules' latest values into the shared frame. Held briefly under
 // the lock so the core-0 network task always snapshots a coherent frame.
-void Drivon::composeFrame() {
-  const DrivonGPS g = m_gnss.data();
-  const DrivonMotion m = m_imu.data();
+void AutoTLM::composeFrame() {
+  const AutoTLMGPS g = m_gnss.data();
+  const AutoTLMMotion m = m_imu.data();
 
   lock();
   m_frame.gnssUp = m_gnss.alive();
@@ -137,19 +137,19 @@ void Drivon::composeFrame() {
   unlock();
 }
 
-void Drivon::snapshotFrame(DrivonFrame& out) {
+void AutoTLM::snapshotFrame(AutoTLMFrame& out) {
   lock();
   out = m_frame;
   unlock();
 }
 
-DrivonFrame Drivon::frame() {
-  DrivonFrame f;
+AutoTLMFrame AutoTLM::frame() {
+  AutoTLMFrame f;
   snapshotFrame(f);
   return f;
 }
 
-void Drivon::deviceId(const char* id) {
+void AutoTLM::deviceId(const char* id) {
   if (!id) return;
   // Remember the override separately so it survives begin() (which resets
   // the frame) no matter which order the sketch calls things in.
@@ -161,8 +161,8 @@ void Drivon::deviceId(const char* id) {
   unlock();
 }
 
-void Drivon::saveDiagnostics() {
-  DrivonDiag d;
+void AutoTLM::saveDiagnostics() {
+  AutoTLMDiag d;
   d.pushOk = m_net.pushOk();
   d.pushFail = m_net.pushFail();
   d.lastHttp = m_net.lastHttp();
@@ -173,7 +173,7 @@ void Drivon::saveDiagnostics() {
   m_config.saveDiag(d);
 }
 
-void Drivon::printDiagnostics(Stream& out) {
+void AutoTLM::printDiagnostics(Stream& out) {
   m_config.printPrevSession(out);
   out.printf("DIAG NOW: wifi=%d rssi=%d pushOk=%lu pushFail=%lu lastHttp=%d wifiDrops=%lu "
              "obd=%d gnss=%d maxLoopMs=%lu\n",
@@ -183,7 +183,7 @@ void Drivon::printDiagnostics(Stream& out) {
              (unsigned long)(m_maxLoopUs / 1000));
 }
 
-void Drivon::setLogStream(Stream* s) {
+void AutoTLM::setLogStream(Stream* s) {
   m_log = s;
   m_obd.setLogStream(s);
   m_net.setLogStream(s);
@@ -192,26 +192,26 @@ void Drivon::setLogStream(Stream* s) {
 // LED legend (same convention the road firmware proved out):
 //   fast 350 ms blink = WiFi down · slow 1 s blink = WiFi up, pushes not
 //   landing · brief 90 ms pulse per push = streaming · off = net unused.
-void Drivon::ledTick() {
+void AutoTLM::ledTick() {
   if (!m_ledEnabled || !m_hal) return;
   const uint32_t t = millis();
   bool on = false;
   switch (m_net.state()) {
-    case DRIVON_NET_DISABLED:  on = false; break;
-    case DRIVON_NET_OFFLINE:   on = (t / 350) % 2; break;
-    case DRIVON_NET_NO_PUSH:   on = (t / 1000) % 2; break;
-    case DRIVON_NET_STREAMING: on = (t - m_net.lastPushMs()) < 90; break;
+    case AUTOTLM_NET_DISABLED:  on = false; break;
+    case AUTOTLM_NET_OFFLINE:   on = (t / 350) % 2; break;
+    case AUTOTLM_NET_NO_PUSH:   on = (t / 1000) % 2; break;
+    case AUTOTLM_NET_STREAMING: on = (t - m_net.lastPushMs()) < 90; break;
   }
   m_hal->led(on);
 }
 
-void Drivon::lock() {
+void AutoTLM::lock() {
 #if defined(ESP32)
   if (m_mutex) xSemaphoreTake(m_mutex, portMAX_DELAY);
 #endif
 }
 
-void Drivon::unlock() {
+void AutoTLM::unlock() {
 #if defined(ESP32)
   if (m_mutex) xSemaphoreGive(m_mutex);
 #endif

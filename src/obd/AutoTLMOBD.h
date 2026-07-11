@@ -1,5 +1,5 @@
 /*
- * DrivonOBD.h — the OBD-II module: PIDs, DTCs, VIN.
+ * AutoTLMOBD.h — the OBD-II module: PIDs, DTCs, VIN.
  *
  * Behavior baked in from road testing:
  *  - LAZY INIT. Talking to a car bus can stall for seconds (or forever, off
@@ -12,27 +12,27 @@
  *    rest, so gauges stay live while the full sensor grid still fills in.
  *  - DTCs are read rarely (every 20 s) because the read is slow.
  *
- * Part of Drivon Core — MIT licensed.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#ifndef DRIVON_OBD_H
-#define DRIVON_OBD_H
+#ifndef AUTOTLM_OBD_H
+#define AUTOTLM_OBD_H
 
 #include <Arduino.h>
-#include "../hal/DrivonHAL.h"
+#include "../hal/AutoTLMHAL.h"
 
 /** Fired when a trouble code appears that wasn't present before. */
-typedef void (*DrivonDTCCallback)(const char* code);
+typedef void (*AutoTLMDTCCallback)(const char* code);
 
-#define DRIVON_MAX_DTCS 10
+#define AUTOTLM_MAX_DTCS 10
 
-class DrivonOBD {
+class AutoTLMOBD {
  public:
   /** Wire up the HAL. Does not touch the car. */
-  void begin(DrivonHAL& hal);
+  void begin(AutoTLMHAL& hal);
 
   /**
    * Pump the module: lazy ECU bring-up, PID polling, periodic DTC reads.
-   * Called from Drivon::update(); may block briefly while talking to the bus.
+   * Called from AutoTLM::update(); may block briefly while talking to the bus.
    */
   void tick();
 
@@ -50,7 +50,7 @@ class DrivonOBD {
   // ---------------------------------------------------------- full sweep
   /** True if a value for this mode-01 PID has been read. */
   bool hasPid(uint8_t pid) const { return m_pidHave[pid]; }
-  /** Latest normalized value for a PID (see DrivonPids.h for units). */
+  /** Latest normalized value for a PID (see AutoTLMPids.h for units). */
   int pidValue(uint8_t pid) const { return m_pidVal[pid]; }
   /** How many PIDs the car declared support for. */
   int supportedCount() const { return m_nSupported; }
@@ -63,7 +63,7 @@ class DrivonOBD {
   /** Clear stored codes / the MIL (mode 04). */
   void clearDTCs();
   /** Register a callback fired once per newly-seen code. */
-  void onDTC(DrivonDTCCallback cb) { m_dtcCb = cb; }
+  void onDTC(AutoTLMDTCCallback cb) { m_dtcCb = cb; }
 
   // -------------------------------------------------------------- tuning
   void setPollInterval(uint32_t ms) { m_pollMs = ms; }   ///< default 300 ms
@@ -82,7 +82,7 @@ class DrivonOBD {
   void pollPids();
   void readDTCs();
 
-  DrivonHAL* m_hal = nullptr;
+  AutoTLMHAL* m_hal = nullptr;
   Stream* m_log = &Serial;
 
   bool m_connected = false;
@@ -103,12 +103,12 @@ class DrivonOBD {
   float m_volts = 0;
   char m_vin[24] = "";
 
-  char m_dtcCodes[DRIVON_MAX_DTCS][8];
+  char m_dtcCodes[AUTOTLM_MAX_DTCS][8];
   int m_dtcCount = 0;
   char m_dtcStr[64] = "";
-  uint16_t m_seenCodes[DRIVON_MAX_DTCS];
+  uint16_t m_seenCodes[AUTOTLM_MAX_DTCS];
   int m_seenCount = 0;
-  DrivonDTCCallback m_dtcCb = nullptr;
+  AutoTLMDTCCallback m_dtcCb = nullptr;
 };
 
-#endif // DRIVON_OBD_H
+#endif // AUTOTLM_OBD_H

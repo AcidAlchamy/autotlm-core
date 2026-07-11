@@ -1,16 +1,16 @@
 /*
- * DrivonIMU.cpp — motion module implementation.
- * Part of Drivon Core — MIT licensed.
+ * AutoTLMIMU.cpp — motion module implementation.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#include "DrivonIMU.h"
+#include "AutoTLMIMU.h"
 
-bool DrivonIMU::begin(DrivonHAL& hal) {
+bool AutoTLMIMU::begin(AutoTLMHAL& hal) {
   m_hal = &hal;
   m_available = m_hal->imuBegin();
   return m_available;
 }
 
-void DrivonIMU::tick() {
+void AutoTLMIMU::tick() {
   if (!m_available || !m_hal) return;
   const uint32_t now = millis();
   if (now - m_lastSample < m_intervalMs) return;

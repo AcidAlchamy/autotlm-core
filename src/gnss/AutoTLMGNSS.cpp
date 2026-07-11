@@ -1,19 +1,19 @@
 /*
- * DrivonGNSS.cpp — NMEA parsing (GGA + RMC) with checksum validation.
- * Part of Drivon Core — MIT licensed.
+ * AutoTLMGNSS.cpp — NMEA parsing (GGA + RMC) with checksum validation.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#include "DrivonGNSS.h"
+#include "AutoTLMGNSS.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-bool DrivonGNSS::begin(DrivonHAL& hal) {
+bool AutoTLMGNSS::begin(AutoTLMHAL& hal) {
   m_hal = &hal;
   m_hal->gnssPower(true);
   return m_hal->gnssBegin();
 }
 
-void DrivonGNSS::tick() {
+void AutoTLMGNSS::tick() {
   if (!m_hal) return;
   while (m_hal->gnssAvailable() > 0) {
     const int ci = m_hal->gnssRead();
@@ -33,7 +33,7 @@ void DrivonGNSS::tick() {
 }
 
 // "4903.50,N" -> 49.0583333 (ddmm.mmmm to decimal degrees)
-double DrivonGNSS::coord(const char* v, char hemi) {
+double AutoTLMGNSS::coord(const char* v, char hemi) {
   if (!v || strlen(v) < 3) return 0;
   const double raw = atof(v);
   const int deg = (int)(raw / 100);
@@ -42,7 +42,7 @@ double DrivonGNSS::coord(const char* v, char hemi) {
   return dec;
 }
 
-void DrivonGNSS::parse(char* s) {
+void AutoTLMGNSS::parse(char* s) {
   if (s[0] != '$') return;
 
   // Validate the checksum: XOR of everything between '$' and '*'.
@@ -86,8 +86,8 @@ void DrivonGNSS::parse(char* s) {
   }
 }
 
-DrivonGPS DrivonGNSS::data() const {
-  DrivonGPS g;
+AutoTLMGPS AutoTLMGNSS::data() const {
+  AutoTLMGPS g;
   g.fix = m_fix;
   g.lat = m_lat;
   g.lng = m_lng;

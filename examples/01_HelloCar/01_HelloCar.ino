@@ -1,5 +1,5 @@
 /*
- * 01_HelloCar — the Drivon "blink": read RPM + coolant and print them.
+ * 01_HelloCar — the AutoTLM "blink": read RPM + coolant and print them.
  *
  * Plug the unit into the OBD-II port, open the Serial Monitor @115200 and
  * watch the engine wake up. The ECU connection is brought up lazily in the
@@ -7,16 +7,16 @@
  */
 // Board: the generic define compiles with no extra libraries; the ONE+ needs
 // the FreematicsPlus library installed (see README "Supported boards").
-#define DRIVON_BOARD_GENERIC_ESP32
-// #define DRIVON_BOARD_FREEMATICS_ONEPLUS
-#include <Drivon.h>
+#define AUTOTLM_BOARD_GENERIC_ESP32
+// #define AUTOTLM_BOARD_FREEMATICS_ONEPLUS
+#include <AutoTLM.h>
 
-Drivon car;
+AutoTLM car;
 
 void setup() {
   Serial.begin(115200);
   delay(400);
-  Serial.println("\n=== Drivon: Hello, Car ===");
+  Serial.println("\n=== AutoTLM: Hello, Car ===");
 
   car.begin();  // board + GNSS + IMU up; OBD connects in the background
 }

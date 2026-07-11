@@ -1,15 +1,15 @@
 /*
- * DrivonPids.h — OBD-II mode-01 PID names and the shared normalization rules.
+ * AutoTLMPids.h — OBD-II mode-01 PID names and the shared normalization rules.
  *
  * The normalization here intentionally mirrors the Freematics co-processor's
  * integer conventions (RPM = raw/4, temps = A-40 in °C, percents = A*100/255,
  * module voltage = raw/1000 ...) so that a value in the telemetry frame means
  * the same thing no matter which board produced it.
  *
- * Part of Drivon Core — MIT licensed.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#ifndef DRIVON_PIDS_H
-#define DRIVON_PIDS_H
+#ifndef AUTOTLM_PIDS_H
+#define AUTOTLM_PIDS_H
 
 #include <stdint.h>
 
@@ -67,11 +67,11 @@
 #define PID_ENGINE_REF_TORQUE 0x63
 #endif // PID_ENGINE_LOAD
 
-namespace drivon {
+namespace autotlm {
 
 /**
  * Normalize a raw mode-01 payload (data bytes A, B — the bytes after
- * "41 <pid>") into the Drivon integer value convention.
+ * "41 <pid>") into the AutoTLM integer value convention.
  */
 inline int normalizePid(uint8_t pid, uint8_t A, uint8_t B) {
   const int large = ((int)A << 8) | B;
@@ -155,6 +155,6 @@ inline void formatDTC(uint16_t code, char* buf) {
   buf[5] = 0;
 }
 
-}  // namespace drivon
+}  // namespace autotlm
 
-#endif // DRIVON_PIDS_H
+#endif // AUTOTLM_PIDS_H

@@ -1,13 +1,13 @@
 /*
- * DrivonOBD.cpp — OBD-II module implementation.
- * Part of Drivon Core — MIT licensed.
+ * AutoTLMOBD.cpp — OBD-II module implementation.
+ * Part of AutoTLM Core — MIT licensed.
  */
-#include "DrivonOBD.h"
+#include "AutoTLMOBD.h"
 
 #include <string.h>
-#include "../core/DrivonPids.h"
+#include "../core/AutoTLMPids.h"
 
-// Every mode-01 PID Drivon knows how to normalize; the discovery sweep keeps
+// Every mode-01 PID AutoTLM knows how to normalize; the discovery sweep keeps
 // only the ones this car's ECU actually advertises. 0x42 (module voltage) is
 // included so boards without their own voltage sense can fall back to it.
 static const uint8_t CANDIDATE_PIDS[] = {
@@ -29,9 +29,9 @@ static const uint8_t FAST_PIDS[] = {PID_RPM, PID_SPEED, PID_COOLANT_TEMP,
 // How often to retry the ECU connection while it's down.
 #define INIT_RETRY_MS 10000
 
-void DrivonOBD::begin(DrivonHAL& hal) { m_hal = &hal; }
+void AutoTLMOBD::begin(AutoTLMHAL& hal) { m_hal = &hal; }
 
-void DrivonOBD::tick() {
+void AutoTLMOBD::tick() {
   if (!m_hal) return;
 
   if (!m_connected) {
@@ -52,7 +52,7 @@ void DrivonOBD::tick() {
 
 // Lazy background bring-up: self-throttled so a car-less bench (or a stalled
 // bus) costs one blocked attempt every 10 s and nothing else.
-void DrivonOBD::tryInit() {
+void AutoTLMOBD::tryInit() {
   const uint32_t now = millis();
   if (m_lastInitTry != 0 && now - m_lastInitTry < INIT_RETRY_MS) return;
   m_lastInitTry = now;
@@ -67,7 +67,7 @@ void DrivonOBD::tryInit() {
   discover();
 }
 
-void DrivonOBD::discover() {
+void AutoTLMOBD::discover() {
   if (m_hal->obdVIN(m_vin, sizeof(m_vin))) {
     if (m_log) m_log->printf("VIN:%s\n", m_vin);
   }
@@ -79,7 +79,7 @@ void DrivonOBD::discover() {
   if (m_log) m_log->printf("OBD_PIDS:%d\n", m_nSupported);
 }
 
-void DrivonOBD::pollPids() {
+void AutoTLMOBD::pollPids() {
   for (uint8_t pid : FAST_PIDS) {
     int v;
     if (m_hal->obdReadPID(pid, v)) {
@@ -125,15 +125,15 @@ void DrivonOBD::pollPids() {
   if (!isnan(volts)) m_volts = volts;
 }
 
-void DrivonOBD::readDTCs() {
-  uint16_t codes[DRIVON_MAX_DTCS];
-  const int n = m_hal->obdReadDTC(codes, DRIVON_MAX_DTCS);
+void AutoTLMOBD::readDTCs() {
+  uint16_t codes[AUTOTLM_MAX_DTCS];
+  const int n = m_hal->obdReadDTC(codes, AUTOTLM_MAX_DTCS);
   if (n < 0) return;
 
   m_dtcCount = 0;
   m_dtcStr[0] = 0;
-  for (int i = 0; i < n && i < DRIVON_MAX_DTCS; i++) {
-    drivon::formatDTC(codes[i], m_dtcCodes[m_dtcCount]);
+  for (int i = 0; i < n && i < AUTOTLM_MAX_DTCS; i++) {
+    autotlm::formatDTC(codes[i], m_dtcCodes[m_dtcCount]);
 
     if (strlen(m_dtcStr) + strlen(m_dtcCodes[m_dtcCount]) + 2 <= sizeof(m_dtcStr)) {
       if (m_dtcStr[0]) strcat(m_dtcStr, ",");
@@ -145,7 +145,7 @@ void DrivonOBD::readDTCs() {
     for (int s = 0; s < m_seenCount; s++) {
       if (m_seenCodes[s] == codes[i]) { seen = true; break; }
     }
-    if (!seen && m_seenCount < DRIVON_MAX_DTCS) {
+    if (!seen && m_seenCount < AUTOTLM_MAX_DTCS) {
       m_seenCodes[m_seenCount++] = codes[i];
       if (m_log) m_log->printf("DTC:%s\n", m_dtcCodes[m_dtcCount]);
       if (m_dtcCb) m_dtcCb(m_dtcCodes[m_dtcCount]);
@@ -154,12 +154,12 @@ void DrivonOBD::readDTCs() {
   }
 }
 
-const char* DrivonOBD::dtcAt(int i) const {
+const char* AutoTLMOBD::dtcAt(int i) const {
   if (i < 0 || i >= m_dtcCount) return "";
   return m_dtcCodes[i];
 }
 
-void DrivonOBD::clearDTCs() {
+void AutoTLMOBD::clearDTCs() {
   if (!m_hal || !m_connected) return;
   m_hal->obdClearDTC();
   m_dtcCount = 0;
@@ -167,7 +167,7 @@ void DrivonOBD::clearDTCs() {
   m_seenCount = 0;
 }
 
-void DrivonOBD::fillFrame(bool* pidHave, int* pidVal) const {
+void AutoTLMOBD::fillFrame(bool* pidHave, int* pidVal) const {
   memcpy(pidHave, m_pidHave, sizeof(m_pidHave));
   memcpy(pidVal, m_pidVal, sizeof(m_pidVal));
 }
