@@ -125,6 +125,15 @@ void AutoTLMNet::attach(AutoTLMFrameProvider provider, AutoTLMDiagSaver diagSave
   unlockCfg();
 }
 
+bool AutoTLMNet::pushNow() {
+  ensureMutex();
+  lockCfg();
+  const bool accepted = m_cloudWanted;
+  if (accepted) m_pushNow = true;
+  unlockCfg();
+  return accepted;
+}
+
 bool AutoTLMNet::wifiConnected() const { return WiFi.status() == WL_CONNECTED; }
 
 int AutoTLMNet::rssi() const { return wifiConnected() ? (int)WiFi.RSSI() : 0; }
@@ -155,6 +164,7 @@ void AutoTLMNet::taskLoop() {
     const uint32_t intervalMs = m_intervalMs;
     const bool reassoc = m_reassoc;
     m_reassoc = false;
+    const bool pushAsap = m_pushNow;
     char ssid[AUTOTLM_NET_SSID_LEN], pass[AUTOTLM_NET_PASS_LEN];
     if (reassoc || (wifiWanted && WiFi.status() != WL_CONNECTED)) {
       memcpy(ssid, m_ssid, sizeof(ssid));
@@ -178,7 +188,14 @@ void AutoTLMNet::taskLoop() {
         WiFi.begin(ssid, pass);
       }
     } else if (cloudWanted && WiFi.status() == WL_CONNECTED &&
-               now - lastPush >= intervalMs) {
+               (pushAsap || now - lastPush >= intervalMs)) {
+      // An out-of-cycle request (pushNow) is consumed exactly once, and only
+      // here — if WiFi is down it stays raised and fires on reconnect.
+      if (pushAsap) {
+        lockCfg();
+        m_pushNow = false;
+        unlockCfg();
+      }
       lastPush = now;
       pushFrame();
     }
@@ -315,6 +332,7 @@ void AutoTLMNet::attach(AutoTLMFrameProvider provider, AutoTLMDiagSaver diagSave
   m_diagSaver = diagSaver;
   m_provider = provider;
 }
+bool AutoTLMNet::pushNow() { return false; }
 bool AutoTLMNet::wifiConnected() const { return false; }
 int AutoTLMNet::rssi() const { return 0; }
 AutoTLMNetState AutoTLMNet::state() const { return AUTOTLM_NET_DISABLED; }

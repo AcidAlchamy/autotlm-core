@@ -141,19 +141,54 @@ class BoardAutoTLMOne : public AutoTLMHAL {
     uint8_t resp[64];
     const int n = obdRequest(req, sizeof(req), resp, sizeof(resp));
     if (n < 1 || resp[0] != 0x43) return 0;
+    return parseDtcPayload(resp, n, codes, maxCodes);
+  }
 
-    // Payload after 0x43: either DTC byte-pairs directly, or (newer ECUs) a
-    // count byte first. A leading count makes the remainder length odd.
-    int off = 1;
-    int nBytes = n - 1;
-    if (nBytes % 2 == 1) { off = 2; nBytes--; }
+  int obdEnumerate(uint32_t* respIds, int max) override {
+    if (max <= 0 || (!m_twaiUp && !twaiUp())) return 0;
 
-    int count = 0;
-    for (int i = 0; i + 1 < nBytes && count < maxCodes; i += 2) {
-      const uint16_t code = ((uint16_t)resp[off + i] << 8) | resp[off + i + 1];
-      if (code != 0) codes[count++] = code;
+    // Drain stale frames, then ask a question EVERY emissions module must
+    // answer (mode 01 PID 00) and collect the distinct responders for the
+    // full timeout window — there is no way to know how many will speak.
+    twai_message_t rx;
+    while (twai_receive(&rx, 0) == ESP_OK) {}
+
+    twai_message_t tx = {};
+    tx.identifier = AUTOTLM_OBD_REQ_ID;
+    tx.data_length_code = 8;
+    tx.data[0] = 2;
+    tx.data[1] = 0x01;
+    tx.data[2] = 0x00;
+    if (twai_transmit(&tx, pdMS_TO_TICKS(20)) != ESP_OK) {
+      twaiUp();
+      return 0;
     }
-    return count;
+
+    int n = 0;
+    const uint32_t deadline = millis() + AUTOTLM_OBD_TIMEOUT_MS;
+    while ((int32_t)(deadline - millis()) > 0 && n < max) {
+      if (twai_receive(&rx, pdMS_TO_TICKS(20)) != ESP_OK) continue;
+      if (rx.extd || rx.identifier < AUTOTLM_OBD_RESP_MIN || rx.identifier > AUTOTLM_OBD_RESP_MAX)
+        continue;
+      bool dup = false;
+      for (int i = 0; i < n; i++) {
+        if (respIds[i] == rx.identifier) { dup = true; break; }
+      }
+      if (!dup) respIds[n++] = rx.identifier;
+    }
+    return n;
+  }
+
+  int obdReadDTCFrom(uint32_t respId, uint8_t mode, uint16_t* codes, int maxCodes) override {
+    if (respId < AUTOTLM_OBD_RESP_MIN || respId > AUTOTLM_OBD_RESP_MAX) return -1;
+    if (mode != 0x03 && mode != 0x07 && mode != 0x0A) return -1;
+    const uint8_t req[] = {mode};
+    uint8_t resp[64];
+    // Physical addressing: 0x7E8 listens on 0x7E0, etc.; accept only this
+    // module's answer so a chatty neighbor can't be misattributed.
+    const int n = obdRequestTo(respId - 8, respId, req, sizeof(req), resp, sizeof(resp));
+    if (n < 1 || resp[0] != (uint8_t)(mode + 0x40)) return -1;
+    return parseDtcPayload(resp, n, codes, maxCodes);
   }
 
   void obdClearDTC() override {
@@ -291,13 +326,38 @@ class BoardAutoTLMOne : public AutoTLMHAL {
     return (m_pidmap[i >> 3] & (0x80 >> (i & 7))) != 0;
   }
 
+  /** Payload after the 0x43/0x47/0x4A service byte: either DTC byte-pairs
+      directly, or (newer ECUs) a count byte first — a leading count makes
+      the remainder length odd. @return codes extracted */
+  static int parseDtcPayload(const uint8_t* resp, int n, uint16_t* codes, int maxCodes) {
+    int off = 1;
+    int nBytes = n - 1;
+    if (nBytes % 2 == 1) { off = 2; nBytes--; }
+
+    int count = 0;
+    for (int i = 0; i + 1 < nBytes && count < maxCodes; i += 2) {
+      const uint16_t code = ((uint16_t)resp[off + i] << 8) | resp[off + i + 1];
+      if (code != 0) codes[count++] = code;
+    }
+    return count;
+  }
+
+  /** Functional request: broadcast id, first answering module wins. */
+  int obdRequest(const uint8_t* req, uint8_t reqLen, uint8_t* out, size_t outCap) {
+    return obdRequestTo(AUTOTLM_OBD_REQ_ID, 0, req, reqLen, out, outCap);
+  }
+
   /**
    * One OBD request/response over ISO-TP. `req` is the bare service bytes
    * (e.g. {0x01, 0x0C}); the reassembled response payload (starting at the
    * 0x4x service byte) lands in `out`.
+   * @param reqId    CAN id to send on (0x7DF functional, 0x7E0.. physical)
+   * @param onlyResp accept answers only from this responder (0 = whole
+   *                 0x7E8..0x7EF window, first answer wins)
    * @return payload length, or -1 on timeout/error
    */
-  int obdRequest(const uint8_t* req, uint8_t reqLen, uint8_t* out, size_t outCap) {
+  int obdRequestTo(uint32_t reqId, uint32_t onlyResp, const uint8_t* req, uint8_t reqLen,
+                   uint8_t* out, size_t outCap) {
     if (!m_twaiUp && !twaiUp()) return -1;
 
     // Drop stale frames so we can't match a previous request's answer.
@@ -305,7 +365,7 @@ class BoardAutoTLMOne : public AutoTLMHAL {
     while (twai_receive(&rx, 0) == ESP_OK) {}
 
     twai_message_t tx = {};
-    tx.identifier = AUTOTLM_OBD_REQ_ID;
+    tx.identifier = reqId;
     tx.data_length_code = 8;
     tx.data[0] = reqLen;  // single-frame PCI: length in the low nibble
     memcpy(&tx.data[1], req, reqLen);
@@ -323,6 +383,7 @@ class BoardAutoTLMOne : public AutoTLMHAL {
       if (twai_receive(&rx, pdMS_TO_TICKS(20)) != ESP_OK) continue;
       if (rx.extd || rx.identifier < AUTOTLM_OBD_RESP_MIN || rx.identifier > AUTOTLM_OBD_RESP_MAX)
         continue;
+      if (onlyResp && rx.identifier != onlyResp) continue;
 
       const uint8_t pci = rx.data[0] >> 4;
 

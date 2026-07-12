@@ -79,6 +79,15 @@ class AutoTLM {
    */
   void cloud(const char* url, const char* token, uint32_t intervalMs = 1000);
 
+  /**
+   * Push one frame out of cycle, NOW — for event uploads (a trouble code
+   * just appeared, a script's push statement). Thread-safe: raises a flag
+   * the network task services on its next pass (immediately when WiFi is
+   * up; on reconnect otherwise). The regular interval keeps its cadence.
+   * @return true if a cloud endpoint is configured
+   */
+  bool pushNow() { return m_net.pushNow(); }
+
   // --------------------------------------------------------- provisioning
   /**
    * The zero-code onboarding line. If the unit has been provisioned (WiFi
@@ -113,6 +122,14 @@ class AutoTLM {
   AutoTLMMotion motion() { return m_imu.data(); }
   /** Fired once per newly-appearing trouble code ("P0171"). */
   void onDTC(AutoTLMDTCCallback cb) { m_obd.onDTC(cb); }
+  /** Same, with the storing module's id — multi-module cars (see modules()). */
+  void onDTC(AutoTLMDTCModuleCallback cb) { m_obd.onDTC(cb); }
+  /**
+   * How many diagnosable modules (ECUs) the car has — engine, transmission,
+   * ABS, airbag... Details via car.obd().module(i) and the per-module DTC
+   * accessors. 0 = single-module view (board can't enumerate).
+   */
+  int modules() { return m_obd.moduleCount(); }
 
   // -------------------------------------------------------------- modules
   AutoTLMOBD& obd() { return m_obd; }

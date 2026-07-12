@@ -96,6 +96,31 @@ class AutoTLMHAL {
    */
   virtual float obdBatteryVoltage() { return NAN; }
 
+  // ------------------------------------------------------ multi-module OBD
+  /**
+   * Enumerate the car's diagnosable modules: send one functional probe and
+   * collect every distinct responder id (0x7E8..0x7EF on 11-bit CAN — up to
+   * eight ECUs per ISO 15765-4). Real cars answer from several modules;
+   * boards that can't observe that return 0 and AutoTLM falls back to the
+   * single-module view.
+   * @return number of ids written into `respIds`
+   */
+  virtual int obdEnumerate(uint32_t* respIds, int max) {
+    (void)respIds; (void)max;
+    return 0;
+  }
+
+  /**
+   * Read trouble codes from ONE module via physical addressing.
+   * @param respId  the module's responder id (e.g. 0x7E8)
+   * @param mode    0x03 stored / 0x07 pending / 0x0A permanent
+   * @return code count, or -1 when unsupported or the module didn't answer
+   */
+  virtual int obdReadDTCFrom(uint32_t respId, uint8_t mode, uint16_t* codes, int maxCodes) {
+    (void)respId; (void)mode; (void)codes; (void)maxCodes;
+    return -1;
+  }
+
   // ---------------------------------------------------------------- raw CAN
   /** Optional raw CAN access. Boards route this through the same controller as OBD. */
   virtual bool canAvailable() const { return false; }

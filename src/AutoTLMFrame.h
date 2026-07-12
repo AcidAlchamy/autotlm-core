@@ -38,6 +38,7 @@ struct AutoTLMFrame {
   char mems[16];                    ///< IMU chip name ("ICM-42627", "MPU-6050", "")
   bool gnssUp;                      ///< GNSS UART alive (a valid sentence was seen)
   int  rssi;                        ///< WiFi RSSI in dBm (0 when offline)
+  uint8_t moduleCount;              ///< diagnosable modules (ECUs) found; 0 = single-module view
 
   // ---- OBD-II ----
   bool  obdConnected;               ///< true once the ECU answers

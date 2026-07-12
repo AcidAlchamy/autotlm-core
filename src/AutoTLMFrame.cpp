@@ -49,7 +49,8 @@ size_t AutoTLMFrame::toJson(char* buf, size_t cap) const {
   jstr(buf, cap, len, deviceType);
   jcat(buf, cap, len, "\",\"mems\":\"");
   jstr(buf, cap, len, mems);
-  jcat(buf, cap, len, "\",\"fw_gnss\":\"%s\",\"rssi\":%d},", gnssUp ? "OK" : "NO", rssi);
+  jcat(buf, cap, len, "\",\"fw_gnss\":\"%s\",\"rssi\":%d,\"modules\":%d},",
+       gnssUp ? "OK" : "NO", rssi, (int)moduleCount);
 
   jcat(buf, cap, len,
        "\"obd\":{\"connected\":%s,\"speed_kph\":%d,\"rpm\":%d,\"coolant_c\":%d,"

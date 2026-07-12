@@ -19,6 +19,7 @@ AutoTLMMotion	KEYWORD1
 AutoTLMDiag	KEYWORD1
 AutoTLMCanMsg	KEYWORD1
 AutoTLMProvision	KEYWORD1
+AutoTLMModuleInfo	KEYWORD1
 BoardAutoTLMOne	KEYWORD1
 
 #######################################
@@ -29,6 +30,7 @@ begin	KEYWORD2
 update	KEYWORD2
 wifi	KEYWORD2
 cloud	KEYWORD2
+pushNow	KEYWORD2
 provision	KEYWORD2
 beginPortal	KEYWORD2
 provisioning	KEYWORD2
@@ -65,6 +67,12 @@ dtcAt	KEYWORD2
 mil	KEYWORD2
 clearDTCs	KEYWORD2
 dtcString	KEYWORD2
+modules	KEYWORD2
+moduleCount	KEYWORD2
+module	KEYWORD2
+moduleDtcAt	KEYWORD2
+modulePendingAt	KEYWORD2
+modulePermanentAt	KEYWORD2
 setPollInterval	KEYWORD2
 setDtcInterval	KEYWORD2
 data	KEYWORD2

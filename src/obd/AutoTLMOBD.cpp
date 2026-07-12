@@ -46,7 +46,11 @@ void AutoTLMOBD::tick() {
   }
   if (m_connected && now - m_lastDtc >= m_dtcMs) {
     m_lastDtc = now;
-    readDTCs();
+    // Multi-module cars get the per-module sweep (one module per tick, so a
+    // slow bus can never stall update() for long); single-module (or boards
+    // that can't enumerate) keep the classic functional read.
+    if (m_moduleCount > 0) readModuleDTCs();
+    else readDTCs();
   }
 }
 
@@ -77,6 +81,27 @@ void AutoTLMOBD::discover() {
     if (m_hal->obdIsPIDSupported(CANDIDATE_PIDS[i])) m_supported[m_nSupported++] = CANDIDATE_PIDS[i];
   }
   if (m_log) m_log->printf("OBD_PIDS:%d\n", m_nSupported);
+
+  // Which modules live on this bus? (One functional probe, every distinct
+  // responder counted — boards that can't do it return 0.)
+  uint32_t ids[AUTOTLM_MAX_MODULES];
+  const int found = m_hal->obdEnumerate(ids, AUTOTLM_MAX_MODULES);
+  memset(m_modules, 0, sizeof(m_modules));
+  m_moduleCount = 0;
+  m_moduleCursor = 0;
+  for (int i = 0; i < found; i++) {
+    // Insert sorted by id so module order is stable across boots.
+    int at = m_moduleCount;
+    while (at > 0 && m_modules[at - 1].id > ids[i]) {
+      m_modules[at] = m_modules[at - 1];
+      at--;
+    }
+    m_modules[at] = ModuleState{};
+    m_modules[at].id = ids[i];
+    m_moduleCount++;
+  }
+  if (m_log && m_moduleCount)
+    m_log->printf("OBD_MODULES:%d (first 0x%lX)\n", m_moduleCount, (unsigned long)m_modules[0].id);
 }
 
 void AutoTLMOBD::pollPids() {
@@ -154,6 +179,92 @@ void AutoTLMOBD::readDTCs() {
   }
 }
 
+// One module per DTC tick: 3 physically-addressed reads (stored / pending /
+// permanent), bounded time on the bus. With 8 modules and the default 20 s
+// cadence a full sweep completes in ~2.7 min — DTCs move slowly.
+void AutoTLMOBD::readModuleDTCs() {
+  ModuleState& m = m_modules[m_moduleCursor++ % m_moduleCount];
+
+  int n = m_hal->obdReadDTCFrom(m.id, 0x03, m.stored, AUTOTLM_MODULE_DTCS);
+  if (n >= 0) {
+    m.nStored = (uint8_t)n;
+    for (int i = 0; i < n; i++) {
+      bool seen = false;
+      for (int s = 0; s < m.nSeen; s++) {
+        if (m.seen[s] == m.stored[i]) { seen = true; break; }
+      }
+      if (!seen && m.nSeen < AUTOTLM_MODULE_DTCS) {
+        m.seen[m.nSeen++] = m.stored[i];
+        char code[8];
+        autotlm::formatDTC(m.stored[i], code);
+        if (m_log) m_log->printf("DTC:%s @0x%lX\n", code, (unsigned long)m.id);
+        if (m_dtcModCb) m_dtcModCb(code, m.id);
+        if (m_dtcCb) m_dtcCb(code);
+      }
+    }
+  }
+  n = m_hal->obdReadDTCFrom(m.id, 0x07, m.pending, AUTOTLM_MODULE_DTCS);
+  if (n >= 0) m.nPending = (uint8_t)n;
+  n = m_hal->obdReadDTCFrom(m.id, 0x0A, m.permanent, AUTOTLM_MODULE_DTCS);
+  if (n >= 0) m.nPermanent = (uint8_t)n;
+
+  rebuildAggregate();
+}
+
+// The classic dtcCount()/dtcString()/mil() view (and the frame) become the
+// UNION of every module's stored codes — a C-code in the ABS module lights
+// mil() just like the check-engine lamp it represents.
+void AutoTLMOBD::rebuildAggregate() {
+  m_dtcCount = 0;
+  m_dtcStr[0] = 0;
+  for (int mi = 0; mi < m_moduleCount && m_dtcCount < AUTOTLM_MAX_DTCS; mi++) {
+    const ModuleState& m = m_modules[mi];
+    for (int i = 0; i < m.nStored && m_dtcCount < AUTOTLM_MAX_DTCS; i++) {
+      bool dup = false;
+      for (int d = 0; d < m_dtcCount; d++) {
+        char existing[8];
+        autotlm::formatDTC(m.stored[i], existing);
+        if (strcmp(existing, m_dtcCodes[d]) == 0) { dup = true; break; }
+      }
+      if (dup) continue;
+      autotlm::formatDTC(m.stored[i], m_dtcCodes[m_dtcCount]);
+      if (strlen(m_dtcStr) + strlen(m_dtcCodes[m_dtcCount]) + 2 <= sizeof(m_dtcStr)) {
+        if (m_dtcStr[0]) strcat(m_dtcStr, ",");
+        strcat(m_dtcStr, m_dtcCodes[m_dtcCount]);
+      }
+      m_dtcCount++;
+    }
+  }
+}
+
+AutoTLMModuleInfo AutoTLMOBD::module(int i) const {
+  AutoTLMModuleInfo info = {};
+  if (i < 0 || i >= m_moduleCount) return info;
+  info.id = m_modules[i].id;
+  info.stored = m_modules[i].nStored;
+  info.pending = m_modules[i].nPending;
+  info.permanent = m_modules[i].nPermanent;
+  return info;
+}
+
+const char* AutoTLMOBD::moduleDtcAt(int i, int j) const {
+  if (i < 0 || i >= m_moduleCount || j < 0 || j >= m_modules[i].nStored) return "";
+  autotlm::formatDTC(m_modules[i].stored[j], m_fmtBuf);
+  return m_fmtBuf;
+}
+
+const char* AutoTLMOBD::modulePendingAt(int i, int j) const {
+  if (i < 0 || i >= m_moduleCount || j < 0 || j >= m_modules[i].nPending) return "";
+  autotlm::formatDTC(m_modules[i].pending[j], m_fmtBuf);
+  return m_fmtBuf;
+}
+
+const char* AutoTLMOBD::modulePermanentAt(int i, int j) const {
+  if (i < 0 || i >= m_moduleCount || j < 0 || j >= m_modules[i].nPermanent) return "";
+  autotlm::formatDTC(m_modules[i].permanent[j], m_fmtBuf);
+  return m_fmtBuf;
+}
+
 const char* AutoTLMOBD::dtcAt(int i) const {
   if (i < 0 || i >= m_dtcCount) return "";
   return m_dtcCodes[i];
@@ -161,10 +272,17 @@ const char* AutoTLMOBD::dtcAt(int i) const {
 
 void AutoTLMOBD::clearDTCs() {
   if (!m_hal || !m_connected) return;
-  m_hal->obdClearDTC();
+  m_hal->obdClearDTC();  // functional mode 04: every module clears
   m_dtcCount = 0;
   m_dtcStr[0] = 0;
   m_seenCount = 0;
+  for (int i = 0; i < m_moduleCount; i++) {
+    // Keep the ids; wipe the lists. Permanent codes survive a clear by
+    // design — the next per-module sweep repopulates them from mode 0A.
+    const uint32_t id = m_modules[i].id;
+    m_modules[i] = ModuleState{};
+    m_modules[i].id = id;
+  }
 }
 
 void AutoTLMOBD::fillFrame(bool* pidHave, int* pidVal) const {

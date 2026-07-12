@@ -1,6 +1,6 @@
 # AutoTLM Core — API reference
 
-Complete public API of AutoTLM Core v0.2.0: **~118 public functions across
+Complete public API of AutoTLM Core v0.3.0: **~130 public functions across
 the facade, 7 modules, the HAL interface and 2 helpers.** This file is the
 source of truth for the website/wiki — field names, units and defaults here
 match the code exactly.
@@ -11,7 +11,7 @@ for display; the portal's metric/imperial choice is stored for them
 
 ---
 
-## `AutoTLM` — the facade (22)
+## `AutoTLM` — the facade (25)
 
 One object that owns the board HAL, all modules, the live telemetry frame and
 the status LED. Beginner API lives here; power users reach through
@@ -26,10 +26,12 @@ the status LED. Beginner API lives here; power users reach through
 | `AutoTLMProvision& provisioning()` | The provisioning module (below). |
 | `void wifi(ssid, pass)` | Connect to WiFi (non-blocking; a core-0 task reconnects forever). Credentials persist to flash; pass `nullptr` to reuse saved ones. |
 | `void cloud(url, token, intervalMs = 1000)` | Stream frames to an HTTP ingest endpoint. Plain HTTP by design (TLS stalls on weak cellular); `token` goes out as `Authorization: Bearer`. |
+| `bool pushNow()` | One out-of-cycle push, now — event uploads (new DTC, script `push`). Thread-safe flag serviced by the network task; fires on reconnect if WiFi is down. |
 | `void update()` | The heartbeat — call every `loop()`. Pumps GNSS/IMU/OBD (self-throttling), the portal while active, the frame and the LED. |
 | `AutoTLMGPS gps()` | Latest GNSS snapshot (struct below). |
 | `AutoTLMMotion motion()` | Latest IMU snapshot (struct below). |
-| `void onDTC(cb)` | Callback fired once per newly-appearing trouble code (`"P0171"`). |
+| `void onDTC(cb)` | Callback fired once per newly-appearing trouble code (`"P0171"`) — or pass a `(code, moduleId)` callback to also learn WHICH module stored it. |
+| `int modules()` | How many diagnosable modules (ECUs) the car has — engine, transmission, ABS... Details via `car.obd().module(i)`. 0 = single-module view. |
 | `AutoTLMOBD& obd()` / `AutoTLMGNSS& gnss()` / `AutoTLMIMU& imu()` / `AutoTLMNet& net()` / `AutoTLMConfig& config()` | Module access (5 functions). |
 | `AutoTLMFrame frame()` | Coherent copy of the current telemetry frame (what the cloud receives). |
 | `void deviceId(id)` | Override the unit id in telemetry (default: chip id). |
@@ -40,7 +42,7 @@ the status LED. Beginner API lives here; power users reach through
 
 ---
 
-## `car.obd()` — OBD-II: PIDs, DTCs, VIN (23)
+## `car.obd()` — OBD-II: PIDs, DTCs, VIN (29)
 
 Lazy init (never blocks startup; retries every 10 s in the background),
 tiered polling (5 headline gauge PIDs every cycle + round-robin through
@@ -59,11 +61,15 @@ everything the ECU supports), DTCs read every 20 s.
 | `bool hasPid(pid)` | Has a value for this mode-01 PID been read? |
 | `int pidValue(pid)` | Latest normalized value for any PID (units per `AutoTLMPids.h`). |
 | `int supportedCount()` | How many PIDs the car declared support for. |
-| `int dtcCount()` / `const char* dtcAt(i)` | Stored trouble codes, e.g. `"P0171"`. |
+| `int dtcCount()` / `const char* dtcAt(i)` | Stored trouble codes, e.g. `"P0171"` — on multi-module cars, the UNION across all modules. |
 | `bool mil()` | Check-engine light (inferred: any code stored). |
 | `const char* dtcString()` | All codes comma-joined: `"P0171,P0420"`. |
 | `void clearDTCs()` | Clear stored codes / the MIL (mode 04). |
-| `void onDTC(cb)` | New-code callback (same as the facade shortcut). |
+| `void onDTC(cb)` | New-code callback (same as the facade shortcut); module-aware `(code, moduleId)` overload available. |
+| `int moduleCount()` | Diagnosable modules that answered enumeration (up to 8 per ISO 15765-4). |
+| `AutoTLMModuleInfo module(i)` | Module i: `{id, stored, pending, permanent}` — CAN responder id + per-kind DTC counts. |
+| `const char* moduleDtcAt(i, j)` | Module i's stored code j (`"C0035"`, `"U0101"`...). |
+| `const char* modulePendingAt(i, j)` / `modulePermanentAt(i, j)` | Same for mode-07 pending and mode-0A permanent codes (2 functions). |
 | `void setPollInterval(ms)` | PID polling cadence (default 300 ms). |
 | `void setDtcInterval(ms)` | DTC read cadence (default 20 s). |
 | `bool everConnected()` | Did the ECU answer at any point this session? |
@@ -103,7 +109,7 @@ so serial garbage can't corrupt a fix.
 
 ---
 
-## `car.net()` — WiFi + cloud push (12)
+## `car.net()` — WiFi + cloud push (13)
 
 Runs on its own CPU core (core 0) so blocking OBD reads can never starve
 uploads. Plain HTTP + cached DNS + fresh connection per push — the recipe
@@ -112,6 +118,7 @@ that survives weak cellular.
 | Function | What it does |
 |---|---|
 | `void wifi(ssid, pass)` / `void cloud(url, token, intervalMs)` | Same as the facade calls (which persist too — prefer those). |
+| `bool pushNow()` | The out-of-cycle push request behind `car.pushNow()`. |
 | `bool wifiConnected()` | WiFi associated? |
 | `int rssi()` | Signal, dBm (0 when offline). |
 | `AutoTLMNetState state()` | `AUTOTLM_NET_DISABLED / OFFLINE / NO_PUSH / STREAMING` — what the LED shows. |
@@ -167,7 +174,7 @@ across cores. `clear()` resets to "unknown"; `toJson(buf, cap)` serializes to
 the ingest contract — **field names are stable**, dashboards consume them
 as-is:
 
-`device.{id,type,mems,fw_gnss,rssi}` · `obd.{connected,speed_kph,rpm,
+`device.{id,type,mems,fw_gnss,rssi,modules}` · `obd.{connected,speed_kph,rpm,
 coolant_c,load_pct,throttle_pct,volts,vin,pids{...}}` · `dtc.{mil,codes[]}` ·
 `gps.{fix,lat,lng,alt_m,speed_kph,course,sats,hdop}` · `imu.{ax,ay,az,gx,gy,gz}`
 
@@ -175,7 +182,7 @@ PID map keys are uppercase mode-01 hex; values are normalized integers.
 
 ---
 
-## `AutoTLMHAL` — porting to new hardware (22 virtuals)
+## `AutoTLMHAL` — porting to new hardware (24 virtuals)
 
 Subclass this + pass to `car.begin(yourHal)`; nothing else in the library
 knows what board it's on. Anything the board lacks can honestly return
@@ -184,7 +191,11 @@ false — modules treat that as "not fitted" and carry on.
 Required: `begin, boardId, obdInit, obdReadPID, obdIsPIDSupported,
 obdReadDTC, gnssBegin, gnssAvailable, gnssRead, imuBegin, imuRead`.
 Optional: `deviceType, obdEnd, obdClearDTC, obdVIN, obdBatteryVoltage,
-canAvailable, canRead, canWrite, gnssPower, imuName, led` (+ virtual dtor).
+obdEnumerate, obdReadDTCFrom, canAvailable, canRead, canWrite, gnssPower,
+imuName, led` (+ virtual dtor). `obdEnumerate`/`obdReadDTCFrom` power the
+multi-module view: one functional probe collects every responder
+(0x7E8..0x7EF), then stored/pending/permanent DTCs are read per module by
+physical addressing.
 
 Shipping boards: **`BoardAutoTLMOne`** (the product: from-scratch ISO 15765-4
 / ISO-TP over TWAI @ 500 kbps 11-bit, multi-frame VIN/DTC reassembly, NRC-0x78
@@ -214,14 +225,14 @@ Plus the full set of `PID_*` constants (mode-01 names → hex) in
 
 | Area | Public functions |
 |---|---|
-| `AutoTLM` facade | 22 |
-| OBD | 23 |
+| `AutoTLM` facade | 25 |
+| OBD | 29 |
 | GNSS | 6 |
 | IMU | 5 |
-| Net | 12 |
+| Net | 13 |
 | Provisioning | 7 |
 | Config | 17 |
 | Frame | 2 (+35 documented fields) |
-| HAL interface | 22 virtuals |
+| HAL interface | 24 virtuals |
 | Helpers | 2 |
-| **Total** | **≈118** |
+| **Total** | **≈130** |

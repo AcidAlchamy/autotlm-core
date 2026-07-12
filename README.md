@@ -77,6 +77,7 @@ work exactly as before — see `03_PushToCloud`.
 | `04_ReadDTCs` | Decoding the check-engine light, new-code callback, clearing codes. |
 | `05_Provisioning` | The zero-code path: captive-portal setup on first boot, saved settings forever after. |
 | `06_LiveGauges` | RPM/speed/coolant/throttle as live bar gauges redrawing in a serial terminal. |
+| `07_ModuleScan` | Every module (ECU) in the car like a scan tool: per-module stored/pending/permanent codes. |
 
 ## Why it's built the way it is
 
@@ -124,14 +125,19 @@ arduino-cli compile --fqbn autotlm:esp32:one --library /path/to/autotlm-core exa
 The short version:
 
 **Facade (`AutoTLM car`)** — `begin()`, `begin(hal)`, `provision()`,
-`beginPortal()`, `wifi(ssid, pass)`, `cloud(url, token, intervalMs)`,
+`beginPortal()`, `wifi(ssid, pass)`, `cloud(url, token, intervalMs)`, `pushNow()`,
 `update()`, `gps()`, `motion()`, `onDTC(cb)`, `frame()`, `deviceId(id)`,
 `printDiagnostics()`, `statusLed(on)`, `setLogStream(s)`.
 
 **OBD (`car.obd()`)** — `connected()`, `rpm()`, `speedKph()`, `coolantC()`,
 `loadPct()`, `throttlePct()`, `volts()`, `vin()`, `hasPid(pid)`,
 `pidValue(pid)`, `supportedCount()`, `dtcCount()`, `dtcAt(i)`, `mil()`,
-`clearDTCs()`, `setPollInterval(ms)`.
+`clearDTCs()`, `setPollInterval(ms)` — plus the multi-module view:
+`moduleCount()`, `module(i)`, `moduleDtcAt(i, j)`, `modulePendingAt(i, j)`,
+`modulePermanentAt(i, j)`. A real car is several computers (engine,
+transmission, ABS, airbag...); AutoTLM enumerates them automatically and
+reads each module's stored/pending/permanent codes — `car.modules()` for the
+count, and `onDTC` accepts a `(code, moduleId)` callback.
 
 **GNSS (`car.gnss()`)** — `data()` → `AutoTLMGPS {fix, lat, lng, altM,
 speedKph, course, hdop, sats, ageMs}`, `alive()`, `echoTo(stream)`,
@@ -161,7 +167,7 @@ format (every field the dashboards understand):
 
 ```json
 {"source":"device",
- "device":{"id":"A6445000","type":"one","mems":"MPU-6050","fw_gnss":"OK","rssi":-51},
+ "device":{"id":"A6445000","type":"one","mems":"MPU-6050","fw_gnss":"OK","rssi":-51,"modules":2},
  "obd":{"connected":true,"speed_kph":58,"rpm":1840,"coolant_c":88,"load_pct":23,
         "throttle_pct":14,"volts":14.2,"vin":"YV0EXAMPLE0000000",
         "pids":{"04":23,"05":88,"0C":1840,"0D":58,"11":14}},
