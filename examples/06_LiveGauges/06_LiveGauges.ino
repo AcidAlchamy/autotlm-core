@@ -7,8 +7,8 @@
  * engine move. The plain Arduino Serial Monitor works too — it just scrolls
  * instead of redrawing.
  */
-// No board define needed: select "AutoTLM One" in the IDE (or any plain
-// ESP32 devkit while breadboarding) and the right HAL comes up on its own.
+// No board define needed: select the AutoTLM One board in the IDE and the
+// right HAL comes up on its own.
 #include <AutoTLM.h>
 
 AutoTLM car;

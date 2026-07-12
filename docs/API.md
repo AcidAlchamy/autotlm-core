@@ -19,7 +19,7 @@ the status LED. Beginner API lives here; power users reach through
 
 | Function | What it does |
 |---|---|
-| `bool begin()` | Bring the unit up on the auto-selected board (AutoTLM One on any ESP32-class target). GNSS + IMU start now; the ECU connection is deliberately lazy so a stalled car bus never blocks connectivity. |
+| `bool begin()` | Bring the unit up on the auto-selected board (the AutoTLM One). GNSS + IMU start now; the ECU connection is deliberately lazy so a stalled car bus never blocks connectivity. |
 | `bool begin(AutoTLMHAL& hal)` | Same, on your own board implementation. |
 | `bool provision()` | The zero-code onboarding line. Provisioned unit → applies saved WiFi + cloud and returns `true`. Fresh unit → raises the captive setup portal and returns `false` (keep calling `update()`; the unit reboots itself after the form is saved). |
 | `bool beginPortal(apName = nullptr, apPass = nullptr)` | Force the setup portal up now (the "reconfigure me" path — wire to a button hold). Default AP name `AutoTLM-XXXX`, open network. |

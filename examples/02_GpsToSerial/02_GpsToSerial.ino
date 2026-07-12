@@ -5,8 +5,8 @@
  * a fix (works indoors near a window with a decent antenna). Uncomment the
  * echo line to also see the raw NMEA stream, handy when checking wiring.
  */
-// No board define needed: select "AutoTLM One" in the IDE (or any plain
-// ESP32 devkit while breadboarding) and the right HAL comes up on its own.
+// No board define needed: select the AutoTLM One board in the IDE and the
+// right HAL comes up on its own.
 #include <AutoTLM.h>
 
 AutoTLM car;

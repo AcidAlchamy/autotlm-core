@@ -47,9 +47,9 @@ into your sketchbook's `libraries/` folder.
 **3. Flash an example.** `File → Examples → AutoTLM → 01_HelloCar`, plug the
 unit into the OBD-II port, open the Serial Monitor @115200, turn the key.
 
-No pin tables, no board defines, no third-party libraries: the AutoTLM One
-board selection carries the wiring, and AutoTLM Core speaks ISO 15765-4
-itself over the ESP32's built-in CAN controller.
+No pin tables, no board defines, no third-party libraries: select the board
+and AutoTLM Core speaks ISO 15765-4 itself, including ISO-TP multi-frame
+for VIN and long DTC lists.
 
 ## First-boot provisioning (no code edits)
 
@@ -96,18 +96,13 @@ on a real LTE hotspot:
 
 ## Hardware
 
-**The target is the AutoTLM One.** While breadboarding (or waiting for one),
-the identical sketch runs on any ESP32 devkit wired the same way — the
-library can't tell the difference, by design:
+**The target is the AutoTLM One.** Select it in the IDE and `car.begin()`
+brings up the right hardware layer on its own. What the library speaks for
+you: OBD-II over CAN (native ISO 15765-4 @ 500 kbps 11-bit, ISO-TP
+multi-frame, bus-off recovery), GNSS (checksum-validated NMEA), motion
+(3-axis accel + gyro), raw CAN for power users, and the status LED.
 
-| | |
-|---|---|
-| CAN | TX GPIO5 → SN65HVD230 D, RX GPIO4 → R; CANH → OBD pin 6, CANL → pin 14, GND → pin 5 |
-| GNSS | UART2: RX GPIO16, TX GPIO17 @ 9600 (NEO-6M/BE-220 class) |
-| IMU | MPU-6050 on I2C: SDA GPIO21, SCL GPIO22 (optional) |
-| LED | GPIO2 |
-
-Pins are overridable via `BoardAutoTLMOne::Pins` if your prototype differs.
+Pin assignments are overridable via `BoardAutoTLMOne::Pins` if you need them.
 Completely custom hardware: subclass `AutoTLMHAL` (one small interface: OBD
 transport, GNSS bytes, IMU, LED) and pass it to `car.begin(yourHal)` —
 nothing else in the library knows what board it's on.
@@ -122,8 +117,6 @@ nothing else in the library knows what board it's on.
 ```
 arduino-cli compile --fqbn autotlm:esp32:one --library /path/to/autotlm-core examples/01_HelloCar
 ```
-
-(`--fqbn esp32:esp32:esp32` also works for a plain devkit.)
 
 ## API overview
 

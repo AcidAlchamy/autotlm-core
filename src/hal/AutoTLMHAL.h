@@ -3,15 +3,13 @@
  *
  * Every AutoTLM module (OBD, GNSS, IMU, networking) talks to the car and the
  * board through this interface only — never to pins, UARTs or CAN controllers
- * directly. That is what lets the exact same sketch run on an AutoTLM One,
- * a breadboarded prototype, or your own hardware: you swap the board class,
- * nothing else.
+ * directly. That is what lets the exact same sketch run on an AutoTLM One
+ * or your own hardware: you swap the board class, nothing else.
  *
  * Shipping implementations:
  *   - BoardAutoTLMOne         (hal/BoardAutoTLMOne.h) — THE board: the
- *     AutoTLM One dev dongle (ESP32-class + 3.3 V CAN transceiver). Speaks
- *     ISO 15765-4 (ISO-TP over TWAI) itself, GNSS on a configurable UART,
- *     optional MPU-6050 IMU. Also runs as-is on a plain ESP32 devkit.
+ *     AutoTLM One dev dongle. Speaks ISO 15765-4 (ISO-TP over TWAI) itself,
+ *     GNSS on a configurable UART, optional IMU.
  *   - BoardFreematicsOnePlus  (hal/BoardFreematicsOnePlus.h) — DEPRECATED
  *     benchmark board (a commercial ESP32 OBD dongle); removal planned.
  *

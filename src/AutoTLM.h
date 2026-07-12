@@ -20,9 +20,8 @@
  *     if (g.fix) Serial.printf("%.5f, %.5f\n", g.lat, g.lng);
  *   }
  *
- * Board selection: none needed. Pick "AutoTLM One" in the IDE (or any plain
- * ESP32 board while breadboarding) and begin() brings up the AutoTLM One
- * HAL automatically. Custom hardware: subclass AutoTLMHAL and pass it to
+ * Board selection: none needed. Pick "AutoTLM One" in the IDE and begin()
+ * brings up the AutoTLM One HAL automatically. Custom hardware: subclass AutoTLMHAL and pass it to
  * car.begin(yourHal). The deprecated Freematics ONE+ benchmark HAL is still
  * selectable with #define AUTOTLM_BOARD_FREEMATICS_ONEPLUS before the
  * include, until it is removed.
@@ -185,8 +184,8 @@ class AutoTLM {
 // board implementation must ride along in this header rather than live in a
 // library .cpp file.
 //
-// Any ESP32-class target (the AutoTLM One board package defines
-// ARDUINO_AUTOTLM_ONE; a plain devkit just defines ESP32) gets the AutoTLM
+// Any supported target (the AutoTLM One board package defines
+// ARDUINO_AUTOTLM_ONE; the toolchain defines ESP32) gets the AutoTLM
 // One HAL. AUTOTLM_BOARD_GENERIC_ESP32 is the deprecated old name for the
 // same thing; the Freematics ONE+ benchmark HAL is deprecated and must be
 // asked for explicitly.
