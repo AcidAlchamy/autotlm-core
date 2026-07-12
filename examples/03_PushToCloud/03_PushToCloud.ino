@@ -10,8 +10,8 @@
  *   fast blink = no WiFi · slow blink = WiFi up but pushes not landing ·
  *   brief pulse every second = streaming.
  */
-// No board define needed: select "AutoTLM One" in the IDE (or any plain
-// ESP32 devkit while breadboarding) and the right HAL comes up on its own.
+// No board define needed: select the AutoTLM One board in the IDE and the
+// right HAL comes up on its own.
 #include <AutoTLM.h>
 
 // Your hotspot + ingest endpoint. Plain http:// by design — TLS handshakes

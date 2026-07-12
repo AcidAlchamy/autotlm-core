@@ -12,10 +12,10 @@
  */
 #define AUTOTLM_ONE_VARIANT 1
 
-#define AUTOTLM_PIN_CAN_TX 5    // -> CAN transceiver D
-#define AUTOTLM_PIN_CAN_RX 4    // -> CAN transceiver R
-#define AUTOTLM_PIN_GNSS_RX 16  // UART2 RX  <- GNSS TX
-#define AUTOTLM_PIN_GNSS_TX 17  // UART2 TX  -> GNSS RX
+#define AUTOTLM_PIN_CAN_TX 5
+#define AUTOTLM_PIN_CAN_RX 4
+#define AUTOTLM_PIN_GNSS_RX 16
+#define AUTOTLM_PIN_GNSS_TX 17
 #define AUTOTLM_GNSS_BAUD 9600
 #define AUTOTLM_PIN_IMU_SDA 21
 #define AUTOTLM_PIN_IMU_SCL 22

@@ -1,9 +1,9 @@
 # AutoTLM boards — thin platform over the Espressif esp32 core.
 #
-# The "AutoTLM One" board is an ESP32-class device; rather than fork the
-# whole esp32 core we reference it (build.core=esp32:esp32), so builds use
-# Espressif's toolchain and recipes while the IDE shows OUR board, OUR
-# variant pin map and OUR defaults. The esp32 core (3.x) must be installed —
+# The AutoTLM One builds on the Espressif esp32 Arduino core; rather than
+# fork it we reference it (build.core=esp32:esp32), so builds use Espressif's
+# toolchain and recipes while the IDE shows OUR board, OUR variant pin map
+# and OUR defaults. The esp32 core (3.x) must be installed —
 # the Arduino platform spec requires a referencing platform to share the
 # referenced platform's architecture, which is why the FQBN is
 # autotlm:esp32:one.

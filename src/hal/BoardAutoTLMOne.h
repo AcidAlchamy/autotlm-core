@@ -1,22 +1,14 @@
 /*
  * BoardAutoTLMOne.h — AutoTLMHAL for the AutoTLM One dev dongle.
  *
- * The AutoTLM One is an ESP32-class board wired to a 3.3 V CAN transceiver
- * (SN65HVD230) on the OBD-II port. It speaks the protocol itself: ISO 15765-4
- * over the ESP32's built-in TWAI controller at 500 kbps / 11-bit — including
- * ISO-TP multi-frame reassembly for VIN and long DTC lists. Values are
- * normalized with the shared rules in AutoTLMPids.h.
+ * The AutoTLM One HAL. Speaks OBD-II itself: ISO 15765-4 over the built-in
+ * TWAI controller at 500 kbps / 11-bit — including ISO-TP multi-frame
+ * reassembly for VIN and long DTC lists. Values are normalized with the
+ * shared rules in AutoTLMPids.h.
  *
- * Wiring comes from the AutoTLM One board package's variant (AUTOTLM_PIN_*
- * in pins_arduino.h) when the "AutoTLM One" board is selected in the IDE;
- * on a plain ESP32 devkit the same defaults apply, and any pin can be
- * overridden via the Pins struct — so a breadboarded prototype and the real
- * unit run the identical sketch:
- *   CAN  TX GPIO5 -> transceiver D, RX GPIO4 -> transceiver R
- *        CANH -> OBD pin 6, CANL -> OBD pin 14, GND -> OBD pin 5
- *   GNSS UART2: RX GPIO16, TX GPIO17 @ 9600 (NEO-6M/BE-220 class module)
- *   IMU  MPU-6050 on I2C: SDA GPIO21, SCL GPIO22
- *   LED  GPIO2
+ * Pin assignments come from the AutoTLM One board package's variant
+ * (AUTOTLM_PIN_* in pins_arduino.h) and can be overridden via the Pins
+ * struct.
  *
  * Header-only so the sketch-level board define can select it.
  *
@@ -34,8 +26,8 @@
 #include "../core/AutoTLMPids.h"
 #include "AutoTLMHAL.h"
 
-// Wiring defaults. The AutoTLM One board package's variant defines these in
-// pins_arduino.h; a plain devkit build falls back to the same values.
+// Pin defaults — the AutoTLM One board package's variant (pins_arduino.h) is
+// the source of truth; these fallbacks match it.
 #ifndef AUTOTLM_PIN_CAN_TX
 #define AUTOTLM_PIN_CAN_TX 5
 #endif
@@ -72,7 +64,7 @@
 
 class BoardAutoTLMOne : public AutoTLMHAL {
  public:
-  /** Override any pin to match your wiring; defaults suit the AutoTLM One. */
+  /** Override any pin assignment; defaults suit the AutoTLM One. */
   struct Pins {
     int canTx = AUTOTLM_PIN_CAN_TX;
     int canRx = AUTOTLM_PIN_CAN_RX;
@@ -268,7 +260,7 @@ class BoardAutoTLMOne : public AutoTLMHAL {
 
  private:
   // Bring the TWAI controller up at 500 kbps and recover it when the bus
-  // knocks it over (no transceiver attached, bus-off after error storms).
+  // knocks it over (unplugged from the car, bus-off after error storms).
   bool twaiUp() {
     if (m_twaiUp) {
       twai_status_info_t st;

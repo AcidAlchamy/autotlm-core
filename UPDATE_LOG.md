@@ -3,6 +3,14 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
+## 2026-07-11 — docs pass: developer-experience first
+
+- README and reference docs streamlined to focus purely on the developer
+  experience: select the AutoTLM One board, install the library, write your
+  sketch. Capability-oriented board section (what the library speaks for
+  you: ISO 15765-4/CAN, GNSS, motion, raw CAN), tightened example headers,
+  and the same story now told consistently on autotlm.com/docs.
+
 ## 2026-07-11 — v0.2.0: the AutoTLM One era
 
 - **"AutoTLM One" is now a real board in the Arduino IDE.** Add our boards

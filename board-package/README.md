@@ -1,10 +1,10 @@
 # AutoTLM boards package
 
 Makes **Tools → Board → AutoTLM One** appear in the Arduino IDE. It is a thin
-platform that *references* the Espressif esp32 core (`build.core=esp32:esp32`),
-so Espressif's toolchain does the building while the IDE shows our board, our
-pin map (`variants/one/pins_arduino.h`, the `AUTOTLM_PIN_*` wiring) and our
-defaults. FQBN: **`autotlm:esp32:one`**.
+platform that *references* the Espressif esp32 Arduino core — the toolchain
+we build on (`build.core=esp32:esp32`) — so Espressif's compiler does the
+building while the IDE shows our board, our pin map
+(`variants/one/pins_arduino.h`) and our defaults. FQBN: **`autotlm:esp32:one`**.
 
 > Why not `autotlm:autotlm:one`? The Arduino platform spec only lets a
 > platform reference a core from a package **of the same architecture** — a
