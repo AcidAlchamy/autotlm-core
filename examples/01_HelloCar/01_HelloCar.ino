@@ -5,10 +5,8 @@
  * watch the engine wake up. The ECU connection is brought up lazily in the
  * background, so the sketch starts instantly even before the ignition is on.
  */
-// Board: the generic define compiles with no extra libraries; the ONE+ needs
-// the FreematicsPlus library installed (see README "Supported boards").
-#define AUTOTLM_BOARD_GENERIC_ESP32
-// #define AUTOTLM_BOARD_FREEMATICS_ONEPLUS
+// No board define needed: select "AutoTLM One" in the IDE (or any plain
+// ESP32 devkit while breadboarding) and the right HAL comes up on its own.
 #include <AutoTLM.h>
 
 AutoTLM car;

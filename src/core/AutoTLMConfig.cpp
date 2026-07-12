@@ -45,6 +45,63 @@ bool AutoTLMConfig::loadWifi(char* ssid, size_t ssidCap, char* pass, size_t pass
   return s.length() > 0;
 }
 
+bool AutoTLMConfig::hasWifi() {
+  m_prefs.begin("autotlm-wifi", true);
+  const bool has = m_prefs.getString("ssid", "").length() > 0;
+  m_prefs.end();
+  return has;
+}
+
+void AutoTLMConfig::saveCloud(const char* url, const char* token, uint32_t intervalMs) {
+  m_prefs.begin("autotlm-cloud", false);
+  m_prefs.putString("url", url ? url : "");
+  m_prefs.putString("token", token ? token : "");
+  m_prefs.putULong("interval", intervalMs ? intervalMs : 1000);
+  m_prefs.end();
+}
+
+bool AutoTLMConfig::loadCloud(char* url, size_t urlCap, char* token, size_t tokenCap,
+                              uint32_t* intervalMs) {
+  m_prefs.begin("autotlm-cloud", true);
+  String u = m_prefs.getString("url", "");
+  String t = m_prefs.getString("token", "");
+  uint32_t iv = m_prefs.getULong("interval", 1000);
+  m_prefs.end();
+  if (url && urlCap) { strncpy(url, u.c_str(), urlCap - 1); url[urlCap - 1] = 0; }
+  if (token && tokenCap) { strncpy(token, t.c_str(), tokenCap - 1); token[tokenCap - 1] = 0; }
+  if (intervalMs) *intervalMs = iv;
+  return u.length() > 0;
+}
+
+void AutoTLMConfig::saveGpsEnabled(bool on) {
+  m_prefs.begin("autotlm-dev", false);
+  m_prefs.putBool("gps", on);
+  m_prefs.end();
+}
+
+bool AutoTLMConfig::gpsEnabled() {
+  m_prefs.begin("autotlm-dev", true);
+  const bool on = m_prefs.getBool("gps", true);
+  m_prefs.end();
+  return on;
+}
+
+void AutoTLMConfig::saveUnits(const char* units) {
+  m_prefs.begin("autotlm-dev", false);
+  m_prefs.putString("units", units ? units : "metric");
+  m_prefs.end();
+}
+
+size_t AutoTLMConfig::units(char* out, size_t cap) {
+  m_prefs.begin("autotlm-dev", true);
+  String v = m_prefs.getString("units", "metric");
+  m_prefs.end();
+  if (!out || !cap) return 0;
+  strncpy(out, v.c_str(), cap - 1);
+  out[cap - 1] = 0;
+  return strlen(out);
+}
+
 void AutoTLMConfig::saveDiag(const AutoTLMDiag& d) {
   m_diag.putULong("pushOk", d.pushOk);
   m_diag.putULong("pushFail", d.pushFail);
@@ -101,6 +158,23 @@ bool AutoTLMConfig::loadWifi(char* ssid, size_t ssidCap, char* pass, size_t pass
   if (ssid && ssidCap) ssid[0] = 0;
   if (pass && passCap) pass[0] = 0;
   return false;
+}
+bool AutoTLMConfig::hasWifi() { return false; }
+void AutoTLMConfig::saveCloud(const char*, const char*, uint32_t) {}
+bool AutoTLMConfig::loadCloud(char* url, size_t urlCap, char* token, size_t tokenCap, uint32_t* intervalMs) {
+  if (url && urlCap) url[0] = 0;
+  if (token && tokenCap) token[0] = 0;
+  if (intervalMs) *intervalMs = 1000;
+  return false;
+}
+void AutoTLMConfig::saveGpsEnabled(bool) {}
+bool AutoTLMConfig::gpsEnabled() { return true; }
+void AutoTLMConfig::saveUnits(const char*) {}
+size_t AutoTLMConfig::units(char* out, size_t cap) {
+  if (!out || !cap) return 0;
+  strncpy(out, "metric", cap - 1);
+  out[cap - 1] = 0;
+  return strlen(out);
 }
 void AutoTLMConfig::saveDiag(const AutoTLMDiag&) {}
 void AutoTLMConfig::printPrevSession(Stream& out) const { out.println("DIAG: not available on this platform"); }

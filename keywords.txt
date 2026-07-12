@@ -18,8 +18,8 @@ AutoTLMGPS	KEYWORD1
 AutoTLMMotion	KEYWORD1
 AutoTLMDiag	KEYWORD1
 AutoTLMCanMsg	KEYWORD1
-BoardFreematicsOnePlus	KEYWORD1
-BoardGenericEsp32	KEYWORD1
+AutoTLMProvision	KEYWORD1
+BoardAutoTLMOne	KEYWORD1
 
 #######################################
 # Methods and Functions (KEYWORD2)
@@ -29,6 +29,13 @@ begin	KEYWORD2
 update	KEYWORD2
 wifi	KEYWORD2
 cloud	KEYWORD2
+provision	KEYWORD2
+beginPortal	KEYWORD2
+provisioning	KEYWORD2
+active	KEYWORD2
+saved	KEYWORD2
+apName	KEYWORD2
+setRestartOnSave	KEYWORD2
 gps	KEYWORD2
 motion	KEYWORD2
 onDTC	KEYWORD2
@@ -76,6 +83,13 @@ wifiDrops	KEYWORD2
 setVerbose	KEYWORD2
 saveWifi	KEYWORD2
 loadWifi	KEYWORD2
+hasWifi	KEYWORD2
+saveCloud	KEYWORD2
+loadCloud	KEYWORD2
+saveGpsEnabled	KEYWORD2
+gpsEnabled	KEYWORD2
+saveUnits	KEYWORD2
+units	KEYWORD2
 saveDiag	KEYWORD2
 prevSession	KEYWORD2
 putString	KEYWORD2
@@ -91,8 +105,7 @@ canAvailable	KEYWORD2
 # Constants (LITERAL1)
 #######################################
 
-AUTOTLM_BOARD_FREEMATICS_ONEPLUS	LITERAL1
-AUTOTLM_BOARD_GENERIC_ESP32	LITERAL1
+AUTOTLM_BOARD_ONE	LITERAL1
 AUTOTLM_NET_DISABLED	LITERAL1
 AUTOTLM_NET_OFFLINE	LITERAL1
 AUTOTLM_NET_NO_PUSH	LITERAL1

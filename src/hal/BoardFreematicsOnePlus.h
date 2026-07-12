@@ -1,9 +1,10 @@
 /*
  * BoardFreematicsOnePlus.h — AutoTLMHAL for the Freematics ONE+ (ESP32).
  *
- * A compatibility board and capability benchmark: the ONE+ is a commercial
- * ESP32 OBD dongle we support so AutoTLM's own hardware can be measured
- * against it. AutoTLM One itself is built on BoardGenericEsp32, not this.
+ * DEPRECATED. The ONE+ was only ever a capability benchmark while AutoTLM's
+ * own hardware came together; the AutoTLM One (BoardAutoTLMOne) is the
+ * product and needs no third-party library. This HAL is slated for removal
+ * in a future release and gets no new features.
  *
  * The hardware recipe:
  *  - OBD-II via the co-processor link (FreematicsPlus COBD) — protocol
@@ -22,6 +23,8 @@
  */
 #ifndef AUTOTLM_BOARD_FREEMATICS_ONEPLUS_H
 #define AUTOTLM_BOARD_FREEMATICS_ONEPLUS_H
+
+#warning "BoardFreematicsOnePlus is deprecated and will be removed — target the AutoTLM One (BoardAutoTLMOne) instead."
 
 #include <FreematicsPlus.h>
 

@@ -1,20 +1,20 @@
 # AutoTLM Core
 
-**Read a car and push telemetry in a few lines.**
+**The library for the [AutoTLM One](https://autotlm.com) — read a car and
+push telemetry in a few lines.**
 
-AutoTLM Core is the open-source Arduino C++ library at the heart of the
-[AutoTLM](https://autotlm.com) car-telemetry platform: OBD-II PIDs, trouble
-codes and VIN; GNSS; an IMU; and a road-proven cloud push — behind one clean
-facade, on hardware you can buy (or breadboard) today.
+Select the **AutoTLM One** board, install **AutoTLM Core**, write your sketch.
+That's the whole platform thesis: car telemetry without the discouraging
+parts. OBD-II PIDs, trouble codes and VIN; GNSS; an IMU; browser-based
+first-boot setup; and a road-proven cloud push — behind one clean facade.
 
 ```cpp
 #include <AutoTLM.h>
 AutoTLM car;
 
 void setup() {
-  car.begin();                                  // OBD + GNSS + IMU up
-  car.wifi("MyHotspot", "password");
-  car.cloud("http://yourserver.com/api/ingest", "TOKEN");
+  car.begin();       // OBD + GNSS + IMU up
+  car.provision();   // saved settings? go. fresh unit? phone-based setup portal.
   car.onDTC([](const char* code){ Serial.println(code); });
 }
 
@@ -26,7 +26,57 @@ void loop() {
 }
 ```
 
-Works in the **Arduino IDE** and **PlatformIO**. MIT licensed.
+MIT licensed. Works in the **Arduino IDE** and **PlatformIO**.
+
+## Getting started (three steps)
+
+**1. Get the AutoTLM One board into your IDE.**
+File → Preferences → *Additional boards manager URLs*, add:
+
+```
+https://raw.githubusercontent.com/AcidAlchamy/autotlm-core/master/board-package/package_autotlm_index.json
+```
+
+then in **Boards Manager** install **esp32** (by Espressif, 3.x) and
+**AutoTLM Boards**, and pick **Tools → Board → AutoTLM One**.
+(FQBN for the CLI: `autotlm:esp32:one`. Details: [board-package/](board-package/).)
+
+**2. Install AutoTLM Core** — Library Manager ("AutoTLM"), or clone this repo
+into your sketchbook's `libraries/` folder.
+
+**3. Flash an example.** `File → Examples → AutoTLM → 01_HelloCar`, plug the
+unit into the OBD-II port, open the Serial Monitor @115200, turn the key.
+
+No pin tables, no board defines, no third-party libraries: the AutoTLM One
+board selection carries the wiring, and AutoTLM Core speaks ISO 15765-4
+itself over the ESP32's built-in CAN controller.
+
+## First-boot provisioning (no code edits)
+
+`car.provision()` is the onboarding: on a fresh unit it raises a WiFi access
+point (**AutoTLM-XXXX**). Join it from your phone — the setup page opens by
+itself:
+
+- pick your **WiFi network** (live scan) and password,
+- paste your **cloud ingest URL + token**, choose the push rate,
+- set **GPS** on/off and **display units** (metric / imperial).
+
+Save → the unit reboots and streams. Settings live in flash, survive
+reflashing, and every later boot `car.provision()` applies them silently.
+Re-provision any time with `car.beginPortal()` (wire it to a button hold).
+Prefer hardcoding? `car.wifi(ssid, pass)` + `car.cloud(url, token)` still
+work exactly as before — see `03_PushToCloud`.
+
+## Examples
+
+| Sketch | Shows |
+|---|---|
+| `01_HelloCar` | RPM + coolant + speed on the Serial Monitor — the AutoTLM "blink". |
+| `02_GpsToSerial` | Streaming a GNSS fix (with optional raw-NMEA echo). |
+| `03_PushToCloud` | The full unit with hardcoded credentials: OBD + GNSS + IMU → JSON → your HTTP ingest, 1/s. |
+| `04_ReadDTCs` | Decoding the check-engine light, new-code callback, clearing codes. |
+| `05_Provisioning` | The zero-code path: captive-portal setup on first boot, saved settings forever after. |
+| `06_LiveGauges` | RPM/speed/coolant/throttle as live bar gauges redrawing in a serial terminal. |
 
 ## Why it's built the way it is
 
@@ -44,62 +94,43 @@ on a real LTE hotspot:
 | **Persistent diagnostics** (NVS) | Push/WiFi/OBD counters survive the drive, so a failure in the field is readable over USB back at the desk. |
 | **Status LED convention** | Fast blink = no WiFi · slow blink = WiFi but not pushing · brief pulse = streaming. Diagnosis from across the garage. |
 
-## Supported boards
+## Hardware
 
-Board selection is one `#define` before the include — sketches are otherwise
-identical on every board. AutoTLM runs on **your own hardware**: a plain ESP32
-(and, soon, our own AutoTLM One board) is the first-class target.
+**The target is the AutoTLM One.** While breadboarding (or waiting for one),
+the identical sketch runs on any ESP32 devkit wired the same way — the
+library can't tell the difference, by design:
 
-| Board | Define | What you get |
-|---|---|---|
-| **Generic ESP32 + CAN transceiver** | `AUTOTLM_BOARD_GENERIC_ESP32` (default on ESP32; what the examples ship with) | The primary target. AutoTLM speaks ISO 15765-4 itself over the ESP32's TWAI controller (500 kbps, 11-bit, ISO-TP multi-frame for VIN/DTCs), GNSS on UART2, optional MPU-6050 IMU. No third-party libraries needed. Pins configurable via `BoardGenericEsp32::Pins`. |
-| *AutoTLM One* | *(coming)* | Our own purpose-built OBD-II unit. Same sketches, no changes. |
-| **Freematics ONE+** | `AUTOTLM_BOARD_FREEMATICS_ONEPLUS` | A compatibility board and capability benchmark — a commercial ESP32 OBD dongle we support so AutoTLM One can be measured against (and surpass) it. OBD via its co-processor, GNSS (BE-220) on RX 26 @ 38400, ICM-42627 IMU, battery-voltage sense, status LED. Needs the [FreematicsPlus library](https://github.com/stanleyhuangyc/Freematics) — **note:** upstream needs small patches to build on arduino-esp32 3.x (`soc/gpio_struct.h` include; `esp_task_wdt_reconfigure`; the `ledcAttach` API). |
-
-Custom hardware: subclass `AutoTLMHAL` (one small interface: OBD transport,
-GNSS bytes, IMU, LED) and pass it to `car.begin(yourHal)`. Nothing else in
-the library knows what board it's on — which is exactly how our own boards
-plug in.
-
-Generic-board default wiring: CAN TX GPIO5 / RX GPIO4 → SN65HVD230 → CANH pin 6,
-CANL pin 14, GND pin 5 of the OBD-II port; GNSS RX 16 / TX 17 @ 9600;
-MPU-6050 on SDA 21 / SCL 22; LED GPIO2.
-
-## Install
-
-**Arduino IDE:** clone (or download) this repo into your sketchbook's
-`libraries/` folder, restart the IDE.
-
-```
-git clone https://github.com/AcidAlchamy/autotlm-core.git ~/Documents/Arduino/libraries/AutoTLM
-```
-
-**arduino-cli:**
-
-```
-arduino-cli compile --fqbn esp32:esp32:esp32 --library /path/to/autotlm-core examples/01_HelloCar
-```
-
-The examples compile as-is for the generic ESP32 board. For the Freematics
-ONE+, flip the define at the top of the sketch and also supply the (patched —
-see the boards table) FreematicsPlus library:
-`--libraries /path/to/Freematics/libraries`.
-
-## Examples
-
-| Sketch | Shows |
+| | |
 |---|---|
-| `01_HelloCar` | RPM + coolant + speed on the Serial Monitor — the AutoTLM "blink". |
-| `02_GpsToSerial` | Streaming a GNSS fix (with optional raw-NMEA echo). |
-| `03_PushToCloud` | The full unit: OBD + GNSS + IMU → JSON frames → your HTTP ingest, 1/s. |
-| `04_ReadDTCs` | Decoding the check-engine light, new-code callback, clearing codes. |
+| CAN | TX GPIO5 → SN65HVD230 D, RX GPIO4 → R; CANH → OBD pin 6, CANL → pin 14, GND → pin 5 |
+| GNSS | UART2: RX GPIO16, TX GPIO17 @ 9600 (NEO-6M/BE-220 class) |
+| IMU | MPU-6050 on I2C: SDA GPIO21, SCL GPIO22 (optional) |
+| LED | GPIO2 |
+
+Pins are overridable via `BoardAutoTLMOne::Pins` if your prototype differs.
+Completely custom hardware: subclass `AutoTLMHAL` (one small interface: OBD
+transport, GNSS bytes, IMU, LED) and pass it to `car.begin(yourHal)` —
+nothing else in the library knows what board it's on.
+
+> **Deprecated:** the Freematics ONE+ compatibility HAL
+> (`AUTOTLM_BOARD_FREEMATICS_ONEPLUS`) still compiles if you install the
+> patched FreematicsPlus library, but it was only ever a benchmark and will
+> be removed. `BoardGenericEsp32` is now an alias of `BoardAutoTLMOne`.
+
+## arduino-cli
+
+```
+arduino-cli compile --fqbn autotlm:esp32:one --library /path/to/autotlm-core examples/01_HelloCar
+```
+
+(`--fqbn esp32:esp32:esp32` also works for a plain devkit.)
 
 ## API overview
 
-**Facade (`AutoTLM car`)** — `begin()`, `begin(hal)`, `wifi(ssid, pass)`,
-`cloud(url, token, intervalMs)`, `update()`, `gps()`, `motion()`,
-`onDTC(cb)`, `frame()`, `deviceId(id)`, `printDiagnostics()`,
-`statusLed(on)`, `setLogStream(s)`.
+**Facade (`AutoTLM car`)** — `begin()`, `begin(hal)`, `provision()`,
+`beginPortal()`, `wifi(ssid, pass)`, `cloud(url, token, intervalMs)`,
+`update()`, `gps()`, `motion()`, `onDTC(cb)`, `frame()`, `deviceId(id)`,
+`printDiagnostics()`, `statusLed(on)`, `setLogStream(s)`.
 
 **OBD (`car.obd()`)** — `connected()`, `rpm()`, `speedKph()`, `coolantC()`,
 `loadPct()`, `throttlePct()`, `volts()`, `vin()`, `hasPid(pid)`,
@@ -116,12 +147,16 @@ speedKph, course, hdop, sats, ageMs}`, `alive()`, `echoTo(stream)`,
 **Net (`car.net()`)** — `wifiConnected()`, `rssi()`, `state()`, `pushOk()`,
 `pushFail()`, `lastHttp()`, `wifiDrops()`, `setVerbose(on)`.
 
-**Config (`car.config()`)** — persisted WiFi creds, session diagnostics, and
-a small key/value store for your own sketch (`putString`/`getString`,
-`putInt`/`getInt`).
+**Provisioning (`car.provisioning()`)** — `active()`, `saved()`, `apName()`,
+`setRestartOnSave(on)`, `stop()`.
 
-Values use SI units end to end: km/h, °C, kPa, g/s. (Dashboards convert for
-display; AutoTLM Dash shows mph/°F from the same frames.)
+**Config (`car.config()`)** — persisted WiFi/cloud settings, `gpsEnabled()`,
+`units(buf, cap)`, session diagnostics, and a small key/value store for your
+own sketch (`putString`/`getString`, `putInt`/`getInt`).
+
+Values use SI units end to end: km/h, °C, kPa, g/s. Dashboards convert for
+display — the portal's units choice is stored for them (and for your sketch
+via `car.config().units(...)`); the frame itself stays SI.
 
 ## The telemetry frame
 
@@ -130,7 +165,7 @@ format (every field the dashboards understand):
 
 ```json
 {"source":"device",
- "device":{"id":"A6445000","type":"16","mems":"ICM-42627","fw_gnss":"OK","rssi":-51},
+ "device":{"id":"A6445000","type":"one","mems":"MPU-6050","fw_gnss":"OK","rssi":-51},
  "obd":{"connected":true,"speed_kph":58,"rpm":1840,"coolant_c":88,"load_pct":23,
         "throttle_pct":14,"volts":14.2,"vin":"YV0EXAMPLE0000000",
         "pids":{"04":23,"05":88,"0C":1840,"0D":58,"11":14}},
@@ -140,15 +175,15 @@ format (every field the dashboards understand):
  "imu":{"ax":0.02,"ay":-0.11,"az":1.00,"gx":0.4,"gy":-0.2,"gz":0.1}}
 ```
 
+Field names are stable — AutoTLM Dash and AutoTLM Cloud consume them as-is.
 PID map keys are uppercase mode-01 hex; values are normalized integers
 (RPM in rpm, temps in °C, percents 0–100 — see `src/core/AutoTLMPids.h`).
 
 ## Roadmap
 
-- AutoTLM One board support (same sketches, our hardware)
-- Teensy 4.x HAL (FlexCAN) for radio-less CAN tools like the bench ECU emulator
-- Captive-portal WiFi provisioning module
+- AutoTLM One production hardware (same sketches, no changes)
 - TLMscript on top of this API
+- OTA updates via AutoTLM Cloud
 
 ## License
 

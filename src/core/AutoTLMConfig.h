@@ -46,6 +46,22 @@ class AutoTLMConfig {
   void saveWifi(const char* ssid, const char* pass);
   /** Load saved WiFi credentials. @return true if an SSID was stored */
   bool loadWifi(char* ssid, size_t ssidCap, char* pass, size_t passCap);
+  /** True if WiFi credentials are stored (the "is this unit provisioned?" test). */
+  bool hasWifi();
+
+  // ------------------------------------------- provisioned device settings
+  /** Persist the cloud ingest endpoint (URL + bearer token + push interval). */
+  void saveCloud(const char* url, const char* token, uint32_t intervalMs);
+  /** Load the saved cloud endpoint. @return true if a URL was stored */
+  bool loadCloud(char* url, size_t urlCap, char* token, size_t tokenCap,
+                 uint32_t* intervalMs = nullptr);
+  /** Persist the GPS on/off switch (portal "GPS" setting; default on). */
+  void saveGpsEnabled(bool on);
+  bool gpsEnabled();
+  /** Persist display units: "metric" or "imperial" (dashboards + sketches read it). */
+  void saveUnits(const char* units);
+  /** @return chars copied; defaults to "metric" when unset */
+  size_t units(char* out, size_t cap);
 
   // ---------------------------------------------------------- diagnostics
   /** Counters recorded by the previous session (what happened on the drive). */
