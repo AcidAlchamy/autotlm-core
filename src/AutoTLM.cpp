@@ -58,7 +58,28 @@ bool AutoTLM::begin(AutoTLMHAL& hal) {
   m_net.attach(frameProviderThunk, diagSaverThunk, this);
   m_net.setLogStream(m_log);
 
+  m_prov.attach(&m_config, m_log);
+
   return boardOk;
+}
+
+bool AutoTLM::provision() {
+  if (m_config.hasWifi()) {
+    // Provisioned: come up on the saved settings. wifi(nullptr) reuses the
+    // stored credentials; the cloud endpoint applies only if one was saved.
+    wifi(nullptr, nullptr);
+    char url[AUTOTLM_NET_PATH_LEN + AUTOTLM_NET_HOST_LEN], token[AUTOTLM_NET_TOKEN_LEN];
+    uint32_t intervalMs = 1000;
+    if (m_config.loadCloud(url, sizeof(url), token, sizeof(token), &intervalMs))
+      cloud(url, token, intervalMs);
+    return true;
+  }
+  beginPortal();
+  return false;  // not provisioned yet — the portal (if it came up) takes it from here
+}
+
+bool AutoTLM::beginPortal(const char* apName, const char* apPass) {
+  return m_prov.start(apName, apPass);
 }
 
 void AutoTLM::wifi(const char* ssid, const char* pass) {
@@ -83,6 +104,8 @@ void AutoTLM::cloud(const char* url, const char* token, uint32_t intervalMs) {
 void AutoTLM::update() {
   if (!m_hal) return;
   const uint32_t t0 = micros();
+
+  if (m_prov.active()) m_prov.tick();
 
   ledTick();
   m_gnss.tick();

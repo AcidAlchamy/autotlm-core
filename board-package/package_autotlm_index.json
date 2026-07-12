@@ -1,0 +1,29 @@
+{
+  "packages": [
+    {
+      "name": "autotlm",
+      "maintainer": "AutoTLM",
+      "websiteURL": "https://autotlm.com",
+      "email": "dev@autotlm.com",
+      "help": { "online": "https://github.com/AcidAlchamy/autotlm-core" },
+      "platforms": [
+        {
+          "name": "AutoTLM Boards",
+          "architecture": "esp32",
+          "version": "0.2.0",
+          "category": "Contributed",
+          "url": "https://github.com/AcidAlchamy/autotlm-core/releases/download/boards-0.2.0/autotlm-boards-0.2.0.zip",
+          "archiveFileName": "autotlm-boards-0.2.0.zip",
+          "checksum": "SHA-256:REPLACED-BY-make-release.ps1",
+          "size": "REPLACED-BY-make-release.ps1",
+          "help": { "online": "https://github.com/AcidAlchamy/autotlm-core" },
+          "boards": [{ "name": "AutoTLM One" }],
+          "toolsDependencies": [],
+          "discoveryDependencies": [],
+          "monitorDependencies": []
+        }
+      ],
+      "tools": []
+    }
+  ]
+}

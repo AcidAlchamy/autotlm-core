@@ -20,14 +20,12 @@
  *     if (g.fix) Serial.printf("%.5f, %.5f\n", g.lat, g.lng);
  *   }
  *
- * Board selection is a compile-time define placed BEFORE the include:
- *
- *   #define AUTOTLM_BOARD_GENERIC_ESP32        // plain ESP32 + CAN transceiver (primary)
- *   #define AUTOTLM_BOARD_FREEMATICS_ONEPLUS   // Freematics ONE+ (compat / benchmark)
- *   #include <AutoTLM.h>
- *
- * With no define, an ESP32 target defaults to the generic board. Custom
- * hardware: subclass AutoTLMHAL and pass it to car.begin(yourHal).
+ * Board selection: none needed. Pick "AutoTLM One" in the IDE (or any plain
+ * ESP32 board while breadboarding) and begin() brings up the AutoTLM One
+ * HAL automatically. Custom hardware: subclass AutoTLMHAL and pass it to
+ * car.begin(yourHal). The deprecated Freematics ONE+ benchmark HAL is still
+ * selectable with #define AUTOTLM_BOARD_FREEMATICS_ONEPLUS before the
+ * include, until it is removed.
  *
  * Part of AutoTLM Core — MIT licensed.
  */
@@ -43,6 +41,7 @@
 #include "imu/AutoTLMIMU.h"
 #include "net/AutoTLMNet.h"
 #include "obd/AutoTLMOBD.h"
+#include "provision/AutoTLMProvision.h"
 
 #if defined(ESP32)
 #include <freertos/FreeRTOS.h>
@@ -80,6 +79,27 @@ class AutoTLM {
    * sensor reads.
    */
   void cloud(const char* url, const char* token, uint32_t intervalMs = 1000);
+
+  // --------------------------------------------------------- provisioning
+  /**
+   * The zero-code onboarding line. If the unit has been provisioned (WiFi
+   * saved — via the portal or an earlier car.wifi()), applies the saved
+   * WiFi + cloud settings and returns true. Otherwise raises the captive
+   * setup portal (join "AutoTLM-XXXX" from a phone, the page pops up) and
+   * returns false — keep calling update(); the unit reboots itself into the
+   * saved settings once the form is submitted.
+   */
+  bool provision();
+
+  /**
+   * Force the setup portal up right now, even if already provisioned (the
+   * "reconfigure me" path — wire it to a button hold). Portal + normal
+   * operation don't mix: call it instead of wifi()/cloud(), not after.
+   */
+  bool beginPortal(const char* apName = nullptr, const char* apPass = nullptr);
+
+  /** The provisioning module (portal state, saved(), setRestartOnSave...). */
+  AutoTLMProvision& provisioning() { return m_prov; }
 
   /**
    * The heartbeat: pump GNSS/IMU/OBD, refresh the frame, drive the LED.
@@ -144,6 +164,7 @@ class AutoTLM {
   AutoTLMIMU m_imu;
   AutoTLMNet m_net;
   AutoTLMConfig m_config;
+  AutoTLMProvision m_prov;
 
   AutoTLMFrame m_frame;
   char m_idOverride[AUTOTLM_ID_LEN] = "";
@@ -163,13 +184,20 @@ class AutoTLM {
 // define is only visible in the sketch's own translation unit, so the chosen
 // board implementation must ride along in this header rather than live in a
 // library .cpp file.
+//
+// Any ESP32-class target (the AutoTLM One board package defines
+// ARDUINO_AUTOTLM_ONE; a plain devkit just defines ESP32) gets the AutoTLM
+// One HAL. AUTOTLM_BOARD_GENERIC_ESP32 is the deprecated old name for the
+// same thing; the Freematics ONE+ benchmark HAL is deprecated and must be
+// asked for explicitly.
 // ---------------------------------------------------------------------------
 #if defined(AUTOTLM_BOARD_FREEMATICS_ONEPLUS)
 #include "hal/BoardFreematicsOnePlus.h"
 #define AUTOTLM_DEFAULT_BOARD BoardFreematicsOnePlus
-#elif defined(AUTOTLM_BOARD_GENERIC_ESP32) || defined(ESP32)
-#include "hal/BoardGenericEsp32.h"
-#define AUTOTLM_DEFAULT_BOARD BoardGenericEsp32
+#elif defined(ARDUINO_AUTOTLM_ONE) || defined(AUTOTLM_BOARD_ONE) || \
+    defined(AUTOTLM_BOARD_GENERIC_ESP32) || defined(ESP32)
+#include "hal/BoardAutoTLMOne.h"
+#define AUTOTLM_DEFAULT_BOARD BoardAutoTLMOne
 #endif
 
 inline bool AutoTLM::begin() {
