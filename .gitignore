@@ -3,6 +3,7 @@ build/
 *.bin
 *.elf
 *.map
+board-package/*.zip
 
 # Editor / OS noise
 .vscode/
