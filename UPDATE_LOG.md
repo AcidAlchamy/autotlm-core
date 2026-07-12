@@ -3,6 +3,15 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
+## 2026-07-11 — v0.2.0 tagged + CI
+
+- **v0.2.0 released** on GitHub — the AutoTLM One board package, browser
+  provisioning, six examples and the full API reference, now under a proper
+  version tag.
+- **Continuous integration**: every push now compiles all six examples on
+  both the standard toolchain and the published AutoTLM One board package —
+  a regression can't reach users unnoticed.
+
 ## 2026-07-11 — docs pass: developer-experience first
 
 - README and reference docs streamlined to focus purely on the developer

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  examples:
+    name: examples (${{ matrix.fqbn }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        fqbn:
+          - esp32:esp32:esp32
+          - autotlm:esp32:one
+    env:
+      AUTOTLM_INDEX: https://raw.githubusercontent.com/AcidAlchamy/autotlm-core/master/board-package/package_autotlm_index.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Install platforms
+        run: |
+          arduino-cli core update-index --additional-urls "$AUTOTLM_INDEX"
+          arduino-cli core install esp32:esp32@3.3.8 --additional-urls "$AUTOTLM_INDEX"
+          if [ "${{ matrix.fqbn }}" = "autotlm:esp32:one" ]; then
+            # Installs the PUBLISHED board package from the release zip — CI
+            # therefore also proves the Boards Manager artifact stays healthy.
+            arduino-cli core install autotlm:esp32 --additional-urls "$AUTOTLM_INDEX"
+          fi
+
+      - name: Compile every example
+        run: |
+          set -e
+          for ex in examples/*/; do
+            echo "::group::$ex (${{ matrix.fqbn }})"
+            arduino-cli compile --fqbn "${{ matrix.fqbn }}" --library . "$ex"
+            echo "::endgroup::"
+          done
