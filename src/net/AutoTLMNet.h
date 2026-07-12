@@ -77,6 +77,16 @@ class AutoTLMNet {
   /** Wire the frame source + diag persistence (done by the AutoTLM facade). */
   void attach(AutoTLMFrameProvider provider, AutoTLMDiagSaver diagSaver, void* ctx);
 
+  /**
+   * Request one out-of-cycle push NOW (event upload: a DTC just appeared, a
+   * script said "push"). Thread-safe from any core: this only raises a flag;
+   * the core-0 network task performs the push on its next pass — immediately
+   * when WiFi is up, or the moment it reconnects. The interval cadence is
+   * unaffected.
+   * @return true if a cloud endpoint is configured (the request is queued)
+   */
+  bool pushNow();
+
   // ------------------------------------------------------------- status
   bool wifiConnected() const;
   int rssi() const;                       ///< dBm, 0 when offline
@@ -121,6 +131,7 @@ class AutoTLMNet {
   uint16_t m_port = 80;
   uint32_t m_intervalMs = 1000;
   bool m_cloudWanted = false;
+  bool m_pushNow = false;  ///< one-shot out-of-cycle push request (mutex-guarded)
 
   AutoTLMFrameProvider m_provider = nullptr;
   AutoTLMDiagSaver m_diagSaver = nullptr;

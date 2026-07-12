@@ -22,8 +22,22 @@
 
 /** Fired when a trouble code appears that wasn't present before. */
 typedef void (*AutoTLMDTCCallback)(const char* code);
+/** Same, but identifies WHICH module stored it (CAN responder id, e.g. 0x7E8). */
+typedef void (*AutoTLMDTCModuleCallback)(const char* code, uint32_t moduleId);
 
 #define AUTOTLM_MAX_DTCS 10
+/** ISO 15765-4 gives 11-bit CAN eight diagnosable modules (0x7E8..0x7EF). */
+#define AUTOTLM_MAX_MODULES 8
+/** Per-module, per-kind code capacity. */
+#define AUTOTLM_MODULE_DTCS 8
+
+/** One diagnosable module (ECU) found on the bus. */
+struct AutoTLMModuleInfo {
+  uint32_t id;        ///< CAN responder id, 0x7E8..0x7EF
+  uint8_t stored;     ///< mode-03 (confirmed) code count
+  uint8_t pending;    ///< mode-07 code count
+  uint8_t permanent;  ///< mode-0A code count (survive a clear)
+};
 
 class AutoTLMOBD {
  public:
@@ -64,6 +78,22 @@ class AutoTLMOBD {
   void clearDTCs();
   /** Register a callback fired once per newly-seen code. */
   void onDTC(AutoTLMDTCCallback cb) { m_dtcCb = cb; }
+  /** Same, with the storing module's id (multi-module cars). */
+  void onDTC(AutoTLMDTCModuleCallback cb) { m_dtcModCb = cb; }
+
+  // ------------------------------------------------------------- modules
+  /**
+   * How many diagnosable modules (ECUs) answered enumeration — a real car
+   * is several: engine, transmission, ABS, airbag... 0 means the board
+   * can't enumerate (single-module view; everything above still works).
+   */
+  int moduleCount() const { return m_moduleCount; }
+  /** Info for module i (id + per-kind DTC counts). Zeroed when out of range. */
+  AutoTLMModuleInfo module(int i) const;
+  /** Module i's stored / pending / permanent code j as text ("P0171"; "" OOR). */
+  const char* moduleDtcAt(int i, int j) const;
+  const char* modulePendingAt(int i, int j) const;
+  const char* modulePermanentAt(int i, int j) const;
 
   // -------------------------------------------------------------- tuning
   void setPollInterval(uint32_t ms) { m_pollMs = ms; }   ///< default 300 ms
@@ -77,10 +107,22 @@ class AutoTLMOBD {
   void fillFrame(bool* pidHave, int* pidVal) const;
 
  private:
+  struct ModuleState {
+    uint32_t id;
+    uint16_t stored[AUTOTLM_MODULE_DTCS];
+    uint16_t pending[AUTOTLM_MODULE_DTCS];
+    uint16_t permanent[AUTOTLM_MODULE_DTCS];
+    uint8_t nStored, nPending, nPermanent;
+    uint16_t seen[AUTOTLM_MODULE_DTCS];  ///< codes already reported via callback
+    uint8_t nSeen;
+  };
+
   void tryInit();
   void discover();
   void pollPids();
   void readDTCs();
+  void readModuleDTCs();
+  void rebuildAggregate();
 
   AutoTLMHAL* m_hal = nullptr;
   Stream* m_log = &Serial;
@@ -109,6 +151,12 @@ class AutoTLMOBD {
   uint16_t m_seenCodes[AUTOTLM_MAX_DTCS];
   int m_seenCount = 0;
   AutoTLMDTCCallback m_dtcCb = nullptr;
+  AutoTLMDTCModuleCallback m_dtcModCb = nullptr;
+
+  ModuleState m_modules[AUTOTLM_MAX_MODULES] = {};
+  int m_moduleCount = 0;
+  int m_moduleCursor = 0;
+  mutable char m_fmtBuf[8];  ///< scratch for moduleDtcAt-family formatting
 };
 
 #endif // AUTOTLM_OBD_H

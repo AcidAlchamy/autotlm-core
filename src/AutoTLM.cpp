@@ -132,6 +132,7 @@ void AutoTLM::composeFrame() {
   m_frame.gnssUp = m_gnss.alive();
   m_frame.rssi = m_net.rssi();
 
+  m_frame.moduleCount = (uint8_t)m_obd.moduleCount();
   m_frame.obdConnected = m_obd.connected();
   m_frame.rpm = m_obd.rpm();
   m_frame.speedKph = m_obd.speedKph();
