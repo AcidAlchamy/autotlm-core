@@ -127,6 +127,9 @@ arduino-cli compile --fqbn autotlm:esp32:one --library /path/to/autotlm-core exa
 
 ## API overview
 
+**Full reference — every function, with units and defaults: [docs/API.md](docs/API.md).**
+The short version:
+
 **Facade (`AutoTLM car`)** — `begin()`, `begin(hal)`, `provision()`,
 `beginPortal()`, `wifi(ssid, pass)`, `cloud(url, token, intervalMs)`,
 `update()`, `gps()`, `motion()`, `onDTC(cb)`, `frame()`, `deviceId(id)`,
