@@ -3,6 +3,21 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
+## 2026-07-12 — v0.4.0: drives survive dead spots
+
+- **Offline catch-up.** Lose WiFi in a parking garage or a tunnel mid-drive?
+  The unit keeps capturing frames and replays them in one batched upload the
+  moment the connection returns — the trip's story arrives complete, not
+  with a hole in it. Rate-limited by the server? It backs off politely and
+  catches up after.
+- **Cleaner frames.** Telemetry now omits what isn't there (no GPS fix = no
+  gps object) instead of sending zeroes — dashboards can trust every field
+  they receive.
+- **Multi-module reliability fix** from the first two-device bench runs: on
+  cars where several modules answer every broadcast request, responses are
+  now matched to their request — no more misattributed answers under heavy
+  bus chatter.
+
 ## 2026-07-12 — v0.3.0: your car is more than one computer
 
 - **Multi-module awareness.** Real cars carry several diagnosable computers —

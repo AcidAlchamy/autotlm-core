@@ -1,6 +1,6 @@
 # AutoTLM Core — API reference
 
-Complete public API of AutoTLM Core v0.3.0: **~130 public functions across
+Complete public API of AutoTLM Core v0.4.0: **~132 public functions across
 the facade, 7 modules, the HAL interface and 2 helpers.** This file is the
 source of truth for the website/wiki — field names, units and defaults here
 match the code exactly.
@@ -109,7 +109,7 @@ so serial garbage can't corrupt a fix.
 
 ---
 
-## `car.net()` — WiFi + cloud push (13)
+## `car.net()` — WiFi + cloud push (15)
 
 Runs on its own CPU core (core 0) so blocking OBD reads can never starve
 uploads. Plain HTTP + cached DNS + fresh connection per push — the recipe
@@ -119,6 +119,8 @@ that survives weak cellular.
 |---|---|
 | `void wifi(ssid, pass)` / `void cloud(url, token, intervalMs)` | Same as the facade calls (which persist too — prefer those). |
 | `bool pushNow()` | The out-of-cycle push request behind `car.pushNow()`. |
+| `void setBufferFrames(n)` | Offline buffer size (default 24 frames, 0 = off; heap-allocated on first use). While WiFi is down (or the server rate-limits), one frame per push interval is captured; on reconnect they go up as ONE batched POST (array, ≤50 per the ingest contract), oldest first. Overflow drops oldest. |
+| `uint16_t buffered()` | Frames currently waiting in the offline buffer. |
 | `bool wifiConnected()` | WiFi associated? |
 | `int rssi()` | Signal, dBm (0 when offline). |
 | `AutoTLMNetState state()` | `AUTOTLM_NET_DISABLED / OFFLINE / NO_PUSH / STREAMING` — what the LED shows. |
@@ -178,6 +180,10 @@ as-is:
 coolant_c,load_pct,throttle_pct,volts,vin,pids{...}}` · `dtc.{mil,codes[]}` ·
 `gps.{fix,lat,lng,alt_m,speed_kph,course,sats,hdop}` · `imu.{ax,ay,az,gx,gy,gz}`
 
+**Absent sub-objects are OMITTED, never zero-filled** (the AutoTLM Cloud
+ingest contract): no ECU answering → no `obd`, no fix → no `gps`, no IMU →
+no `imu`, no codes and no MIL → no `dtc`. Consumers null-check.
+
 PID map keys are uppercase mode-01 hex; values are normalized integers.
 
 ---
@@ -229,10 +235,10 @@ Plus the full set of `PID_*` constants (mode-01 names → hex) in
 | OBD | 29 |
 | GNSS | 6 |
 | IMU | 5 |
-| Net | 13 |
+| Net | 15 |
 | Provisioning | 7 |
 | Config | 17 |
 | Frame | 2 (+35 documented fields) |
 | HAL interface | 24 virtuals |
 | Helpers | 2 |
-| **Total** | **≈130** |
+| **Total** | **≈132** |

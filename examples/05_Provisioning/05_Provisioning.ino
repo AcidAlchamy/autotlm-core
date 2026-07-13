@@ -1,21 +1,25 @@
 /*
- * 05_Provisioning — the zero-code onboarding path.
+ * 05_Provisioning — THE reference sketch: provision → read the car → push.
  *
  * No SSID in the sketch, no token pasted into code. On a fresh unit,
  * car.provision() raises a WiFi access point ("AutoTLM-XXXX"); join it from
  * a phone or laptop and the setup page pops up on its own (captive portal —
- * or browse to http://192.168.4.1). Pick your network, paste your ingest
- * URL + token, choose GPS and units, hit save: the unit reboots and starts
- * streaming. Every boot after that, the same line applies the saved
+ * or browse to http://192.168.4.1). Pick your network, paste your cloud
+ * URL + device token, choose GPS and units, hit save: the unit reboots and
+ * starts streaming. Every boot after that, the same line applies the saved
  * settings and the portal never appears.
  *
- * To re-provision, either call car.beginPortal() (wire it to a button
- * hold), or just submit new settings from a sketch: car.wifi(...) always
- * persists what it's given.
+ * RE-PROVISIONING (new WiFi, rotated token): hold the SETUP button while
+ * powering on — the portal comes back with your saved values untouched
+ * until you save new ones. A wrong WiFi password never boot-loops: the unit
+ * keeps retrying every few seconds and the button is always the way back.
  */
 // No board define needed: select the AutoTLM One board in the IDE and the
 // right HAL comes up on its own.
 #include <AutoTLM.h>
+
+// The SETUP button (the boot-mode button on the AutoTLM One; LOW = held).
+#define SETUP_BTN 0
 
 AutoTLM car;
 
@@ -26,7 +30,13 @@ void setup() {
 
   car.begin();
 
-  if (car.provision()) {
+  pinMode(SETUP_BTN, INPUT_PULLUP);
+  if (digitalRead(SETUP_BTN) == LOW) {
+    // Held at power-on: the owner wants the setup portal back.
+    car.beginPortal();
+    Serial.printf("Setup requested: join WiFi \"%s\" to reconfigure.\n",
+                  car.provisioning().apName());
+  } else if (car.provision()) {
     Serial.println("Provisioned — coming up on the saved settings.");
   } else {
     Serial.printf("First boot: join WiFi \"%s\" to set this unit up.\n",

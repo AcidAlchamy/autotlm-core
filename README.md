@@ -156,6 +156,10 @@ speedKph, course, hdop, sats, ageMs}`, `alive()`, `echoTo(stream)`,
 `units(buf, cap)`, session diagnostics, and a small key/value store for your
 own sketch (`putString`/`getString`, `putInt`/`getInt`).
 
+Absent sub-objects are omitted, never zero-filled — no GPS fix means no
+`gps` object (consumers null-check; the cloud ingest contract). Frames
+captured while WiFi is down are batched into one catch-up POST on reconnect
+(offline buffer: 24 frames by default, `car.net().setBufferFrames(n)`).
 Values use SI units end to end: km/h, °C, kPa, g/s. Dashboards convert for
 display — the portal's units choice is stored for them (and for your sketch
 via `car.config().units(...)`); the frame itself stays SI.

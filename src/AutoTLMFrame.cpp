@@ -52,25 +52,31 @@ size_t AutoTLMFrame::toJson(char* buf, size_t cap) const {
   jcat(buf, cap, len, "\",\"fw_gnss\":\"%s\",\"rssi\":%d,\"modules\":%d},",
        gnssUp ? "OK" : "NO", rssi, (int)moduleCount);
 
-  jcat(buf, cap, len,
-       "\"obd\":{\"connected\":%s,\"speed_kph\":%d,\"rpm\":%d,\"coolant_c\":%d,"
-       "\"load_pct\":%d,\"throttle_pct\":%d,\"volts\":%.1f,\"vin\":\"",
-       obdConnected ? "true" : "false", speedKph, rpm, coolantC, loadPct,
-       throttlePct, volts);
-  jstr(buf, cap, len, vin);
-  jcat(buf, cap, len, "\",\"pids\":{");
+  // Contract rule (AutoTLM Cloud API.md): sub-objects that have nothing real
+  // to say are OMITTED — never emitted zero-filled. No ECU answering = no
+  // "obd", no fix = no "gps", no IMU fitted = no "imu", no codes and no MIL
+  // = no "dtc". Consumers null-check; a zeroed lat/lng is a lie on a map.
 
-  bool first = true;
-  for (int p = 0; p < 256; p++) {
-    if (!pidHave[p]) continue;
-    jcat(buf, cap, len, "%s\"%02X\":%d", first ? "" : ",", p, pidVal[p]);
-    first = false;
+  if (obdConnected) {
+    jcat(buf, cap, len,
+         "\"obd\":{\"connected\":true,\"speed_kph\":%d,\"rpm\":%d,\"coolant_c\":%d,"
+         "\"load_pct\":%d,\"throttle_pct\":%d,\"volts\":%.1f,\"vin\":\"",
+         speedKph, rpm, coolantC, loadPct, throttlePct, volts);
+    jstr(buf, cap, len, vin);
+    jcat(buf, cap, len, "\",\"pids\":{");
+
+    bool first = true;
+    for (int p = 0; p < 256; p++) {
+      if (!pidHave[p]) continue;
+      jcat(buf, cap, len, "%s\"%02X\":%d", first ? "" : ",", p, pidVal[p]);
+      first = false;
+    }
+    jcat(buf, cap, len, "}},");
   }
-  jcat(buf, cap, len, "}},");
 
-  // dtc: "P0171,P0420" -> ["P0171","P0420"]
-  jcat(buf, cap, len, "\"dtc\":{\"mil\":%s,\"codes\":[", mil ? "true" : "false");
-  if (dtc[0]) {
+  if (mil || dtc[0]) {
+    // dtc: "P0171,P0420" -> ["P0171","P0420"]
+    jcat(buf, cap, len, "\"dtc\":{\"mil\":%s,\"codes\":[", mil ? "true" : "false");
     const char* p = dtc;
     bool firstCode = true;
     while (*p) {
@@ -81,17 +87,26 @@ size_t AutoTLMFrame::toJson(char* buf, size_t cap) const {
       p += n;
       if (*p == ',') p++;
     }
+    jcat(buf, cap, len, "]},");
   }
-  jcat(buf, cap, len, "]},");
 
-  jcat(buf, cap, len,
-       "\"gps\":{\"fix\":%s,\"lat\":%.6f,\"lng\":%.6f,\"alt_m\":%.1f,"
-       "\"speed_kph\":%.1f,\"course\":%.0f,\"sats\":%d,\"hdop\":%.2f},",
-       fix ? "true" : "false", lat, lng, altM, gpsSpeedKph, course, sats, hdop);
+  if (fix) {
+    jcat(buf, cap, len,
+         "\"gps\":{\"fix\":true,\"lat\":%.6f,\"lng\":%.6f,\"alt_m\":%.1f,"
+         "\"speed_kph\":%.1f,\"course\":%.0f,\"sats\":%d,\"hdop\":%.2f},",
+         lat, lng, altM, gpsSpeedKph, course, sats, hdop);
+  }
 
-  jcat(buf, cap, len,
-       "\"imu\":{\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f}}",
-       ax, ay, az, gx, gy, gz);
+  if (imuHave) {
+    jcat(buf, cap, len,
+         "\"imu\":{\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f},",
+         ax, ay, az, gx, gy, gz);
+  }
+
+  // Every section above ends with ',' so sections can drop out freely; the
+  // frame always has at least source+device, so swap the last ',' for '}'.
+  if (len && buf[len - 1] == ',') buf[len - 1] = '}';
+  else jcat(buf, cap, len, "}");
 
   return len;
 }

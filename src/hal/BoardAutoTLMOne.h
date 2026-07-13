@@ -379,6 +379,13 @@ class BoardAutoTLMOne : public AutoTLMHAL {
     int have = 0;      // bytes collected so far
     uint8_t nextSeq = 1;
 
+    // What a positive answer to THIS request must start with. On a
+    // multi-module car several ECUs answer every functional request; a
+    // straggler answering the PREVIOUS request can land in this window, and
+    // accepting it would fail the read (and, repeated, drop the connection).
+    const uint8_t wantSvc = req[0] + 0x40;
+    const bool wantPid = reqLen >= 2;
+
     while ((int32_t)(deadline - millis()) > 0) {
       if (twai_receive(&rx, pdMS_TO_TICKS(20)) != ESP_OK) continue;
       if (rx.extd || rx.identifier < AUTOTLM_OBD_RESP_MIN || rx.identifier > AUTOTLM_OBD_RESP_MAX)
@@ -397,13 +404,19 @@ class BoardAutoTLMOne : public AutoTLMHAL {
           if (len >= 3 && rx.data[3] == 0x78) deadline = millis() + 2000;
           continue;
         }
+        // Not an answer to this request? Keep waiting for the one that is.
+        if (rx.data[1] != wantSvc) continue;
+        if (wantPid && (len < 2 || rx.data[2] != req[1])) continue;
         const int n = (len <= (int)outCap) ? len : (int)outCap;
         memcpy(out, &rx.data[1], n);
         return n;
       }
 
       if (pci == 0x1 && total < 0) {
-        // First frame of a multi-frame response: 12-bit total length.
+        // First frame of a multi-frame response — same match rule as above
+        // (payload starts at data[2] in a first frame).
+        if (rx.data[2] != wantSvc) continue;
+        if (wantPid && rx.data[3] != req[1]) continue;
         total = (((int)rx.data[0] & 0x0F) << 8) | rx.data[1];
         if (total <= 0 || total > (int)outCap) return -1;  // can't hold it -> honest failure
         have = 0;
