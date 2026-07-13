@@ -56,6 +56,13 @@ enum AutoTLMNetState {
 #define AUTOTLM_NET_PATH_LEN 160
 #define AUTOTLM_NET_TOKEN_LEN 256
 
+// Offline buffer: frames captured while WiFi is down (tunnel, parking garage)
+// and replayed as one batched POST on reconnect (ingest accepts arrays ≤ 50).
+// 24 frames ≈ 35 KB heap, allocated lazily on first use; oldest drop first.
+#define AUTOTLM_NET_BUFFER_FRAMES 24
+// Batch serialization buffer (heap, lazy): bounds frames-per-POST in practice.
+#define AUTOTLM_NET_BATCH_BYTES 16384
+
 class AutoTLMNet {
  public:
   /**
@@ -87,6 +94,15 @@ class AutoTLMNet {
    */
   bool pushNow();
 
+  /**
+   * Resize the offline frame buffer (default AUTOTLM_NET_BUFFER_FRAMES;
+   * 0 disables buffering). Takes effect on the next capture; the buffer is
+   * heap-allocated on first use, so unused = zero cost.
+   */
+  void setBufferFrames(uint8_t n) { m_bufWantCap = n; }
+  /** Frames currently waiting in the offline buffer. */
+  uint16_t buffered() const { return m_bufCount; }
+
   // ------------------------------------------------------------- status
   bool wifiConnected() const;
   int rssi() const;                       ///< dBm, 0 when offline
@@ -117,6 +133,8 @@ class AutoTLMNet {
   void unlockCfg() const;
   void pushFrame();
   void resolveHost(const char* host);
+  void bufferLiveFrame();
+  void noteFailure(int code);   ///< buffer-worthy failure bookkeeping (+ 429 backoff)
 
   // ---- configuration (written by sketch core, read by the task; every
   // ---- access goes through the config mutex) ----
@@ -145,6 +163,11 @@ class AutoTLMNet {
   bool m_verbose = true;
   Stream* m_log = &Serial;
 
+  // Offline-buffer bookkeeping (readable on every platform; the buffer
+  // itself only exists on ESP32).
+  volatile uint16_t m_bufCount = 0;
+  uint8_t m_bufWantCap = AUTOTLM_NET_BUFFER_FRAMES;
+
 #if defined(ESP32)
   SemaphoreHandle_t m_cfgMutex = nullptr;
   TaskHandle_t m_task = nullptr;
@@ -153,6 +176,14 @@ class AutoTLMNet {
   uint32_t m_ipAt = 0;
   AutoTLMFrame m_snapshot;     // task-owned copy (never touched by core 1)
   char m_json[2048];
+
+  // ---- offline buffer + batching (all task-owned) ----
+  AutoTLMFrame* m_buf = nullptr;  ///< lazy ring buffer
+  uint8_t m_bufCap = 0;
+  uint8_t m_bufHead = 0;          ///< next write slot
+  char* m_batch = nullptr;        ///< lazy batch TX buffer
+  uint32_t m_backoffUntil = 0;    ///< 429 rate-limit backoff deadline
+  uint8_t m_backoffN = 0;
 #endif
 };
 

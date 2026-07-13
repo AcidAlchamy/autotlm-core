@@ -181,11 +181,25 @@ void AutoTLMNet::taskLoop() {
       WiFi.begin(ssid, pass);
       lastWifiTry = now;
     } else if (wifiWanted && WiFi.status() != WL_CONNECTED) {
+      // Offline: keep the drive — capture a frame per push interval into the
+      // ring so the story is replayed (batched) the moment WiFi returns.
+      if (cloudWanted && now - lastPush >= intervalMs) {
+        lastPush = now;
+        bufferLiveFrame();
+      }
       if (now - lastWifiTry > WIFI_RETRY_MS) {
         lastWifiTry = now;
         m_wifiDrops = m_wifiDrops + 1;
         WiFi.disconnect();
         WiFi.begin(ssid, pass);
+      }
+    } else if (cloudWanted && WiFi.status() == WL_CONNECTED &&
+               millis() < m_backoffUntil) {
+      // Rate-limited (429): hold off, but keep capturing on cadence so the
+      // catch-up batch has the missing seconds.
+      if (now - lastPush >= intervalMs) {
+        lastPush = now;
+        bufferLiveFrame();
       }
     } else if (cloudWanted && WiFi.status() == WL_CONNECTED &&
                (pushAsap || now - lastPush >= intervalMs)) {
@@ -234,6 +248,41 @@ void AutoTLMNet::resolveHost(const char* host) {
   }
 }
 
+// Snapshot the live frame into the offline ring (oldest drops on overflow).
+void AutoTLMNet::bufferLiveFrame() {
+  lockCfg();
+  AutoTLMFrameProvider provider = m_provider;
+  void* ctx = m_ctx;
+  unlockCfg();
+  if (!provider || !ctx || m_bufWantCap == 0) return;
+
+  if (!m_buf) {
+    m_bufCap = m_bufWantCap;
+    m_buf = (AutoTLMFrame*)malloc(sizeof(AutoTLMFrame) * m_bufCap);
+    if (!m_buf) { m_bufCap = 0; return; }  // heap says no: buffering off
+    m_bufHead = 0;
+    m_bufCount = 0;
+  }
+  provider(ctx, m_buf[m_bufHead]);
+  m_bufHead = (uint8_t)((m_bufHead + 1) % m_bufCap);
+  if (m_bufCount < m_bufCap) m_bufCount = m_bufCount + 1;  // full = oldest overwritten
+}
+
+// A push attempt failed in a way worth remembering: keep the frame (ring) and,
+// for 429, back off exponentially (2s, 4s... 60s cap) so a rate-limited device
+// converges instead of hammering.
+void AutoTLMNet::noteFailure(int code) {
+  m_pushFail = m_pushFail + 1;
+  m_lastHttp = code;
+  bufferLiveFrame();
+  if (code == 429) {
+    if (m_backoffN < 5) m_backoffN++;
+    const uint32_t waitMs = (uint32_t)2000 << (m_backoffN - 1);  // 2s..32s
+    m_backoffUntil = millis() + (waitMs > 60000 ? 60000 : waitMs);
+    if (m_verbose && m_log) m_log->printf("PUSH:429 backoff %lums\n", (unsigned long)(waitMs > 60000 ? 60000 : waitMs));
+  }
+}
+
 void AutoTLMNet::pushFrame() {
   // Work on a coherent copy of the endpoint config for this whole push.
   lockCfg();
@@ -266,8 +315,7 @@ void AutoTLMNet::pushFrame() {
   client.setTimeout(8000);
   const bool ok = haveIp ? client.connect(ip, port) : client.connect(host, port);
   if (!ok) {
-    m_pushFail = m_pushFail + 1;
-    m_lastHttp = -1;
+    noteFailure(-1);
     lockCfg();
     m_haveIp = false;  // the cached IP may be stale — re-resolve next time
     unlockCfg();
@@ -275,8 +323,47 @@ void AutoTLMNet::pushFrame() {
     return;
   }
 
-  provider(ctx, m_snapshot);
-  const size_t bodyLen = m_snapshot.toJson(m_json, sizeof(m_json));
+  // Body: a batched catch-up array when the offline ring holds frames
+  // (ingest accepts ≤ 50 per POST), else the single live frame.
+  const char* body = m_json;
+  size_t bodyLen = 0;
+  int inBatch = 0;  // ring frames included in this POST
+  if (m_bufCount > 0) {
+    if (!m_batch) m_batch = (char*)malloc(AUTOTLM_NET_BATCH_BYTES);
+    if (m_batch) {
+      size_t len = 0;
+      m_batch[len++] = '[';
+      while (inBatch < (int)m_bufCount && inBatch < 49) {
+        // Oldest-first out of the ring (head points at the next write slot).
+        const int idx =
+            ((int)m_bufHead - (int)m_bufCount + inBatch + 4 * (int)m_bufCap) % (int)m_bufCap;
+        char one[2048];
+        const size_t n = m_buf[idx].toJson(one, sizeof(one));
+        if (len + n + 3 >= AUTOTLM_NET_BATCH_BYTES) break;
+        if (inBatch) m_batch[len++] = ',';
+        memcpy(m_batch + len, one, n);
+        len += n;
+        inBatch++;
+      }
+      // The live frame rides along as the newest element (total stays ≤ 50).
+      provider(ctx, m_snapshot);
+      const size_t n = m_snapshot.toJson(m_json, sizeof(m_json));
+      if (len + n + 3 < AUTOTLM_NET_BATCH_BYTES) {
+        if (inBatch) m_batch[len++] = ',';
+        memcpy(m_batch + len, m_json, n);
+        len += n;
+      }
+      m_batch[len++] = ']';
+      m_batch[len] = 0;
+      body = m_batch;
+      bodyLen = len;
+    }
+  }
+  if (bodyLen == 0) {
+    provider(ctx, m_snapshot);
+    bodyLen = m_snapshot.toJson(m_json, sizeof(m_json));
+    body = m_json;
+  }
 
   // Sized for the worst case the config buffers allow (host+path+token+~130).
   char head[672];
@@ -297,15 +384,14 @@ void AutoTLMNet::pushFrame() {
     return;
   }
   client.print(head);
-  client.print(m_json);
+  client.write((const uint8_t*)body, bodyLen);
 
   // Only the status line matters; Connection: close discards the rest.
   String status = client.readStringUntil('\n');
   client.stop();
 
   if (status.length() == 0) {
-    m_pushFail = m_pushFail + 1;
-    m_lastHttp = -2;
+    noteFailure(-2);
     if (m_verbose && m_log) m_log->printf("PUSH:no-resp (%lums)\n", (unsigned long)(millis() - t0));
     return;
   }
@@ -313,14 +399,24 @@ void AutoTLMNet::pushFrame() {
   int code = 0;
   const int sp = status.indexOf(' ');
   if (sp > 0) code = status.substring(sp + 1, sp + 4).toInt();
-  m_lastHttp = code;
   if (code == 200) {
+    m_lastHttp = code;
     m_pushOk = m_pushOk + 1;
     m_lastPushMs = millis();
+    m_backoffN = 0;
+    m_backoffUntil = 0;
+    if (inBatch > 0) m_bufCount = (uint16_t)(m_bufCount - inBatch);  // catch-up delivered
   } else {
-    m_pushFail = m_pushFail + 1;
+    // Anything else (401 bad token, 429 rate-limited, 5xx): the frame is
+    // kept in the ring and 429 starts the exponential hold-off.
+    noteFailure(code);
   }
-  if (m_verbose && m_log) m_log->printf("PUSH:%d (%lums)\n", code, (unsigned long)(millis() - t0));
+  if (m_verbose && m_log) {
+    if (inBatch > 0)
+      m_log->printf("PUSH:%d batch=%d+1 (%lums)\n", code, inBatch, (unsigned long)(millis() - t0));
+    else
+      m_log->printf("PUSH:%d (%lums)\n", code, (unsigned long)(millis() - t0));
+  }
 }
 
 #else  // !ESP32 — no radio on this platform; everything reports "disabled".

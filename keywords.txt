@@ -31,6 +31,8 @@ update	KEYWORD2
 wifi	KEYWORD2
 cloud	KEYWORD2
 pushNow	KEYWORD2
+setBufferFrames	KEYWORD2
+buffered	KEYWORD2
 provision	KEYWORD2
 beginPortal	KEYWORD2
 provisioning	KEYWORD2
