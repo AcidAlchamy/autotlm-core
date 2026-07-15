@@ -64,6 +64,15 @@ bool AutoTLM::begin(AutoTLMHAL& hal) {
 }
 
 bool AutoTLM::provision() {
+  // Offline-reprovision requested a re-pair portal before this boot (the
+  // policy in update() set this flag and rebooted). Honor it once, then it's
+  // a normal boot again.
+  if (m_config.getInt("reprovision", 0)) {
+    m_config.putInt("reprovision", 0);
+    if (m_log) m_log->println("PROVISION:re-pair requested (WiFi was lost) — raising portal");
+    beginPortal();
+    return false;
+  }
   if (m_config.hasWifi()) {
     // Provisioned: come up on the saved settings. wifi(nullptr) reuses the
     // stored credentials; the cloud endpoint applies only if one was saved.
@@ -101,6 +110,18 @@ void AutoTLM::cloud(const char* url, const char* token, uint32_t intervalMs) {
   m_net.cloud(url, token, intervalMs);
 }
 
+bool AutoTLM::changeWifi(const char* ssid, const char* pass) {
+  if (!ssid || !ssid[0]) return false;
+  // Stash the candidate so update() can persist it to NVS if the net task
+  // validates it. Nothing is saved until it actually associates.
+  strncpy(m_pendingSsid, ssid, sizeof(m_pendingSsid) - 1);
+  m_pendingSsid[sizeof(m_pendingSsid) - 1] = 0;
+  strncpy(m_pendingPass, pass ? pass : "", sizeof(m_pendingPass) - 1);
+  m_pendingPass[sizeof(m_pendingPass) - 1] = 0;
+  m_net.tryWifi(ssid, pass);
+  return true;
+}
+
 void AutoTLM::update() {
   if (!m_hal) return;
   const uint32_t t0 = micros();
@@ -112,6 +133,8 @@ void AutoTLM::update() {
   m_imu.tick();
   m_obd.tick();  // includes the lazy ECU bring-up
 
+  serviceWifiChange();
+
   const uint32_t now = millis();
   if (now - m_lastCompose >= COMPOSE_MS) {
     m_lastCompose = now;
@@ -120,6 +143,46 @@ void AutoTLM::update() {
 
   const uint32_t dt = micros() - t0;
   if (dt > m_maxLoopUs) m_maxLoopUs = dt;
+}
+
+// Poll the net task's validate-and-rollback result + run the opt-in
+// offline-reprovision policy. Called every update().
+void AutoTLM::serviceWifiChange() {
+  switch (m_net.wifiChangeState()) {
+    case AUTOTLM_WIFI_OK:
+      // The new network associated: persist it so it survives reboot.
+      if (m_pendingSsid[0]) {
+        m_config.saveWifi(m_pendingSsid, m_pendingPass);
+        m_pendingSsid[0] = 0;
+        m_pendingPass[0] = 0;
+      }
+      m_net.clearWifiChange();
+      if (m_log) m_log->println("WIFI:change committed (new network saved)");
+      break;
+    case AUTOTLM_WIFI_REVERTED:
+      m_pendingSsid[0] = 0;
+      m_pendingPass[0] = 0;
+      m_net.clearWifiChange();
+      if (m_log) m_log->println("WIFI:change reverted — kept the previous network");
+      break;
+    default:
+      break;
+  }
+
+  // Offline-reprovision: a provisioned unit that's been unable to associate
+  // for a sustained window offers a re-pair portal. Reboot-into-portal is the
+  // safe v1 (no live AP/STA driver contention); the portal comes up WPA2 so
+  // it isn't a hijackable open network even if a long tunnel trips it.
+  if (m_reproEnabled && !m_prov.active() && m_config.hasWifi() &&
+      m_net.wifiChangeState() == AUTOTLM_WIFI_IDLE &&
+      m_net.sinceConnectedMs() > m_reproAfterMs) {
+    if (m_log) m_log->println("WIFI:offline too long — rebooting into re-pair portal");
+    m_config.putInt("reprovision", 1);
+    delay(100);
+#if defined(ESP32)
+    ESP.restart();
+#endif
+  }
 }
 
 // Copy the modules' latest values into the shared frame. Held briefly under

@@ -125,9 +125,19 @@ arduino-cli compile --fqbn autotlm:esp32:one --library /path/to/autotlm-core exa
 The short version:
 
 **Facade (`AutoTLM car`)** — `begin()`, `begin(hal)`, `provision()`,
-`beginPortal()`, `wifi(ssid, pass)`, `cloud(url, token, intervalMs)`, `pushNow()`,
-`update()`, `gps()`, `motion()`, `onDTC(cb)`, `frame()`, `deviceId(id)`,
-`printDiagnostics()`, `statusLed(on)`, `setLogStream(s)`.
+`beginPortal()`, `changeWifi(ssid, pass)`, `wifiChangeState()`,
+`setReprovisionOnLostWifi(on)`, `wifi(ssid, pass)`,
+`cloud(url, token, intervalMs)`, `pushNow()`, `update()`, `gps()`, `motion()`,
+`onDTC(cb)`, `frame()`, `deviceId(id)`, `printDiagnostics()`, `statusLed(on)`,
+`setLogStream(s)`.
+
+**Safe WiFi changes.** `car.changeWifi(ssid, pass)` validates the new network
+while keeping the current one and auto-reverts if it can't associate — a wrong
+password never strands the unit off-grid. `car.setReprovisionOnLostWifi(true)`
+makes a provisioned unit re-raise its (WPA2) setup AP after a sustained
+offline window, so re-pairing needs only a phone. The setup AP is secured with
+a per-device password (`car.config().apPassword(buf, cap)`) and its save step
+is CSRF-guarded.
 
 **OBD (`car.obd()`)** — `connected()`, `rpm()`, `speedKph()`, `coolantC()`,
 `loadPct()`, `throttlePct()`, `volts()`, `vin()`, `hasPid(pid)`,
@@ -150,11 +160,12 @@ speedKph, course, hdop, sats, ageMs}`, `alive()`, `echoTo(stream)`,
 `pushFail()`, `lastHttp()`, `wifiDrops()`, `setVerbose(on)`.
 
 **Provisioning (`car.provisioning()`)** — `active()`, `saved()`, `apName()`,
-`setRestartOnSave(on)`, `stop()`.
+`apPassword()`, `setRestartOnSave(on)`, `startAlongsideStation()`, `stop()`.
 
-**Config (`car.config()`)** — persisted WiFi/cloud settings, `gpsEnabled()`,
-`units(buf, cap)`, session diagnostics, and a small key/value store for your
-own sketch (`putString`/`getString`, `putInt`/`getInt`).
+**Config (`car.config()`)** — persisted WiFi/cloud settings, `apPassword(buf,
+cap)`, `gpsEnabled()`, `units(buf, cap)`, session diagnostics, and a small
+key/value store for your own sketch (`putString`/`getString`,
+`putInt`/`getInt`).
 
 Absent sub-objects are omitted, never zero-filled — no GPS fix means no
 `gps` object (consumers null-check; the cloud ingest contract). Frames

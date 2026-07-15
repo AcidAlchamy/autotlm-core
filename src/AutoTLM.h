@@ -110,6 +110,32 @@ class AutoTLM {
   AutoTLMProvision& provisioning() { return m_prov; }
 
   /**
+   * Change the WiFi network SAFELY — validate-and-rollback. Tries the new
+   * credentials while keeping the current ones; if they don't associate
+   * within ~30 s the unit stays on its old network (a wrong password can
+   * never strand it off-network). Non-blocking: poll wifiChangeState(); on
+   * success the new credentials are persisted for you. This is the primitive
+   * behind every live "change my WiFi" path (USB, BLE, app).
+   */
+  bool changeWifi(const char* ssid, const char* pass);
+  /** Live WiFi-change state: AUTOTLM_WIFI_IDLE/VALIDATING/OK/REVERTED. */
+  int wifiChangeState() { return m_net.wifiChangeState(); }
+
+  /**
+   * Offer a re-pair setup AP when a PROVISIONED unit stays offline too long
+   * (network changed / hotspot gone), so a customer with only a phone can
+   * re-pair — no button, no USB. Conservative by design: the AP comes up only
+   * after `afterMs` of sustained no-association (default 2 min), it's WPA2
+   * (not an open network a passer-by can hijack), and a brief mid-drive dead
+   * zone that recovers before the window never triggers it. Off by default.
+   * @param afterMs sustained-offline window before offering the AP
+   */
+  void setReprovisionOnLostWifi(bool on, uint32_t afterMs = 120000) {
+    m_reproEnabled = on;
+    m_reproAfterMs = afterMs;
+  }
+
+  /**
    * The heartbeat: pump GNSS/IMU/OBD, refresh the frame, drive the LED.
    * Call every loop(); individual sensors self-throttle internally.
    */
@@ -170,6 +196,7 @@ class AutoTLM {
 
  private:
   void composeFrame();
+  void serviceWifiChange();
   void ledTick();
   void lock();
   void unlock();
@@ -189,6 +216,14 @@ class AutoTLM {
   bool m_ledEnabled = true;
   bool m_gnssBegan = false;
   Stream* m_log = &Serial;
+
+  // Live WiFi-change (changeWifi): creds staged for NVS persist once the net
+  // task reports the new network validated.
+  char m_pendingSsid[33] = "";
+  char m_pendingPass[65] = "";
+  // Offline-reprovision policy (opt-in; see setReprovisionOnLostWifi).
+  bool m_reproEnabled = false;
+  uint32_t m_reproAfterMs = 120000;
 
 #if defined(ESP32)
   SemaphoreHandle_t m_mutex = nullptr;

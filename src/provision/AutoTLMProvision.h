@@ -47,12 +47,24 @@ class AutoTLMProvision {
   /**
    * Raise the captive portal: softAP + DNS catch-all + the setup page.
    * @param apName  AP SSID; nullptr = "AutoTLM-XXXX" from the chip id
-   * @param apPass  AP password; nullptr/"" = open network (the default —
-   *                provisioning APs are short-lived and a printed password
-   *                is one more thing to get wrong on first boot)
+   * @param apPass  AP password; nullptr = the device's per-unit WPA2 password
+   *                (AutoTLMConfig::apPassword — secures the AP so a passer-by
+   *                can't join and POST new cloud creds). Pass "" to force an
+   *                OPEN AP (not recommended; the AP's /save can redirect a
+   *                car's telemetry).
    * @return true if the AP came up
    */
   bool start(const char* apName = nullptr, const char* apPass = nullptr);
+
+  /**
+   * Raise the portal WITHOUT tearing down the station connection (WIFI_AP_STA),
+   * so the offline-reprovision path can offer a re-pair AP while the net task
+   * keeps trying to rejoin the saved network underneath. @return true if up
+   */
+  bool startAlongsideStation(const char* apName = nullptr, const char* apPass = nullptr);
+
+  /** The AP's password (valid after start(); "" for an open AP). */
+  const char* apPassword() const { return m_apPass; }
 
   /** Service DNS + HTTP. The facade calls this from car.update(). */
   void tick();
@@ -88,10 +100,15 @@ class AutoTLMProvision {
   uint32_t m_restartAt = 0;
 #endif
 
+  bool startImpl(const char* apName, const char* apPass, bool alongsideSta);
+
   AutoTLMConfig* m_config = nullptr;
   Stream* m_log = nullptr;
   char m_apName[33] = "";
+  char m_apPass[16] = "";
+  char m_csrf[17] = "";   ///< per-session token; /save requires it (CSRF guard)
   bool m_active = false;
+  bool m_apSta = false;   ///< true = AP raised alongside STA (offline re-pair)
   bool m_saved = false;
   bool m_restartOnSave = true;
 };

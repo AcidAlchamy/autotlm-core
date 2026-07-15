@@ -9,10 +9,16 @@
  * starts streaming. Every boot after that, the same line applies the saved
  * settings and the portal never appears.
  *
- * RE-PROVISIONING (new WiFi, rotated token): hold the SETUP button while
- * powering on — the portal comes back with your saved values untouched
- * until you save new ones. A wrong WiFi password never boot-loops: the unit
- * keeps retrying every few seconds and the button is always the way back.
+ * RE-PROVISIONING (new WiFi, rotated token): three ways, no wrong answers —
+ *   - hold the SETUP button while powering on (below), or
+ *   - just move: setReprovisionOnLostWifi() offers a re-pair AP on its own
+ *     once the unit has been offline a while (network changed / hotspot
+ *     gone), so a phone is all you ever need, or
+ *   - car.changeWifi(ssid, pass) from your own code — it validates the new
+ *     network and auto-reverts to the old one if the password is wrong, so a
+ *     WiFi change can never strand the unit off-network.
+ * A wrong WiFi password never boot-loops: the unit keeps retrying and every
+ * re-pair path stays open.
  */
 // No board define needed: select the AutoTLM One board in the IDE and the
 // right HAL comes up on its own.
@@ -29,6 +35,11 @@ void setup() {
   Serial.println("\n=== AutoTLM: Provisioning ===");
 
   car.begin();
+
+  // If WiFi goes missing for a couple of minutes on a provisioned unit, offer
+  // a re-pair AP automatically (WPA2 — password from car.config().apPassword)
+  // so re-pairing needs nothing but a phone. Conservative + off by default.
+  car.setReprovisionOnLostWifi(true);
 
   pinMode(SETUP_BTN, INPUT_PULLUP);
   if (digitalRead(SETUP_BTN) == LOW) {

@@ -1,6 +1,6 @@
 # AutoTLM Core — API reference
 
-Complete public API of AutoTLM Core v0.4.0: **~132 public functions across
+Complete public API of AutoTLM Core v0.5.0: **~142 public functions across
 the facade, 7 modules, the HAL interface and 2 helpers.** This file is the
 source of truth for the website/wiki — field names, units and defaults here
 match the code exactly.
@@ -11,7 +11,7 @@ for display; the portal's metric/imperial choice is stored for them
 
 ---
 
-## `AutoTLM` — the facade (25)
+## `AutoTLM` — the facade (28)
 
 One object that owns the board HAL, all modules, the live telemetry frame and
 the status LED. Beginner API lives here; power users reach through
@@ -22,7 +22,10 @@ the status LED. Beginner API lives here; power users reach through
 | `bool begin()` | Bring the unit up on the auto-selected board (the AutoTLM One). GNSS + IMU start now; the ECU connection is deliberately lazy so a stalled car bus never blocks connectivity. |
 | `bool begin(AutoTLMHAL& hal)` | Same, on your own board implementation. |
 | `bool provision()` | The zero-code onboarding line. Provisioned unit → applies saved WiFi + cloud and returns `true`. Fresh unit → raises the captive setup portal and returns `false` (keep calling `update()`; the unit reboots itself after the form is saved). |
-| `bool beginPortal(apName = nullptr, apPass = nullptr)` | Force the setup portal up now (the "reconfigure me" path — wire to a button hold). Default AP name `AutoTLM-XXXX`, open network. |
+| `bool beginPortal(apName = nullptr, apPass = nullptr)` | Force the setup portal up now (the "reconfigure me" path — wire to a button hold). Default AP name `AutoTLM-XXXX`, secured WPA2 with the per-device password. |
+| `bool changeWifi(ssid, pass)` | Change WiFi SAFELY — validate-and-rollback. Tries the new network while keeping the current one; reverts if it can't associate in ~30 s (a wrong password never strands the unit). Non-blocking; persists the new creds on success. Poll `wifiChangeState()`. |
+| `int wifiChangeState()` | Live WiFi-change state: `AUTOTLM_WIFI_IDLE`/`VALIDATING`/`OK`/`REVERTED`. |
+| `void setReprovisionOnLostWifi(on, afterMs = 120000)` | Provisioned unit offline for `afterMs` → re-raise the (WPA2) setup AP so a phone can re-pair it, no button/cable. Opt-in; conservative (a brief dead zone won't trigger it). |
 | `AutoTLMProvision& provisioning()` | The provisioning module (below). |
 | `void wifi(ssid, pass)` | Connect to WiFi (non-blocking; a core-0 task reconnects forever). Credentials persist to flash; pass `nullptr` to reuse saved ones. |
 | `void cloud(url, token, intervalMs = 1000)` | Stream frames to an HTTP ingest endpoint. Plain HTTP by design (TLS stalls on weak cellular); `token` goes out as `Authorization: Bearer`. |
@@ -109,7 +112,7 @@ so serial garbage can't corrupt a fix.
 
 ---
 
-## `car.net()` — WiFi + cloud push (15)
+## `car.net()` — WiFi + cloud push (19)
 
 Runs on its own CPU core (core 0) so blocking OBD reads can never starve
 uploads. Plain HTTP + cached DNS + fresh connection per push — the recipe
@@ -121,6 +124,9 @@ that survives weak cellular.
 | `bool pushNow()` | The out-of-cycle push request behind `car.pushNow()`. |
 | `void setBufferFrames(n)` | Offline buffer size (default 24 frames, 0 = off; heap-allocated on first use). While WiFi is down (or the server rate-limits), one frame per push interval is captured; on reconnect they go up as ONE batched POST (array, ≤50 per the ingest contract), oldest first. Overflow drops oldest. |
 | `uint16_t buffered()` | Frames currently waiting in the offline buffer. |
+| `void tryWifi(ssid, pass)` | Validate-and-rollback primitive behind `car.changeWifi()` — stage new creds, keep the old, revert on failure. |
+| `int wifiChangeState()` / `void clearWifiChange()` | Read / acknowledge the validate-and-rollback result (2 functions). |
+| `uint32_t sinceConnectedMs()` | ms since the station was last associated (0 while connected) — the offline-reprovision policy's "is this network really gone?" signal. |
 | `bool wifiConnected()` | WiFi associated? |
 | `int rssi()` | Signal, dBm (0 when offline). |
 | `AutoTLMNetState state()` | `AUTOTLM_NET_DISABLED / OFFLINE / NO_PUSH / STREAMING` — what the LED shows. |
@@ -133,7 +139,7 @@ that survives weak cellular.
 
 ---
 
-## `car.provisioning()` — the setup portal (7)
+## `car.provisioning()` — the setup portal (9)
 
 Captive portal on softAP `AutoTLM-XXXX`: WiFi scan + credentials, cloud
 URL/token/rate, GPS on/off, metric/imperial. Saves to NVS, reboots into
@@ -146,12 +152,14 @@ normal operation. Normally driven entirely by `car.provision()`.
 | `bool saved()` | Has the user submitted the form (settings in NVS)? |
 | `void setRestartOnSave(on)` | Reboot after save (default true — cleanest radio handover). |
 | `const char* apName()` | The AP SSID in use. |
+| `const char* apPassword()` | The AP's WPA2 password ("" if open). |
+| `bool startAlongsideStation(...)` | Raise the portal in AP+STA mode (keeps the station link up) — for a live re-pair AP without dropping the current connection. |
 | `void stop()` | Tear the portal down. |
 | `void tick()` | Pumped by `car.update()`. |
 
 ---
 
-## `car.config()` — persisted settings + diagnostics (17)
+## `car.config()` — persisted settings + diagnostics (18)
 
 NVS-backed; every method is a safe no-op on platforms without NVS.
 
@@ -161,6 +169,7 @@ NVS-backed; every method is a safe no-op on platforms without NVS.
 | `void saveCloud(url, token, intervalMs)` / `bool loadCloud(...)` | Cloud endpoint. |
 | `void saveGpsEnabled(on)` / `bool gpsEnabled()` | Portal GPS switch (default on). |
 | `void saveUnits(units)` / `size_t units(out, cap)` | `"metric"` / `"imperial"` display preference (default metric). |
+| `size_t apPassword(out, cap)` | The device's per-unit provisioning-AP WPA2 password (8 chars, derived from the chip id — stable, unique, label-printable). |
 | `const AutoTLMDiag& prevSession()` | Counters from the previous drive (`pushOk, pushFail, lastHttp, wifiDrops, obdEver, maxLoopUs, boots`). |
 | `void printPrevSession(out)` | Print them (done at boot). |
 | `void saveDiag(d)` | Persist current counters (the net task does this every 20 s). |
@@ -231,14 +240,14 @@ Plus the full set of `PID_*` constants (mode-01 names → hex) in
 
 | Area | Public functions |
 |---|---|
-| `AutoTLM` facade | 25 |
+| `AutoTLM` facade | 28 |
 | OBD | 29 |
 | GNSS | 6 |
 | IMU | 5 |
-| Net | 15 |
-| Provisioning | 7 |
-| Config | 17 |
+| Net | 19 |
+| Provisioning | 9 |
+| Config | 18 |
 | Frame | 2 (+35 documented fields) |
 | HAL interface | 24 virtuals |
 | Helpers | 2 |
-| **Total** | **≈132** |
+| **Total** | **≈142** |
