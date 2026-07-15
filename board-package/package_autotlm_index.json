@@ -10,6 +10,21 @@
         {
           "name": "AutoTLM Boards",
           "architecture": "esp32",
+          "version": "0.3.0",
+          "category": "Contributed",
+          "url": "https://github.com/AcidAlchamy/autotlm-core/releases/download/boards-0.3.0/autotlm-boards-0.3.0.zip",
+          "archiveFileName": "autotlm-boards-0.3.0.zip",
+          "checksum": "SHA-256:6da87bfb562eadd9b72f502e3ea935ae87fa2f1c2eb0d6e9caa773d95bf8bdf3",
+          "size": "11702101",
+          "help": { "online": "https://github.com/AcidAlchamy/autotlm-core" },
+          "boards": [{ "name": "AutoTLM One" }],
+          "toolsDependencies": [],
+          "discoveryDependencies": [],
+          "monitorDependencies": []
+        },
+        {
+          "name": "AutoTLM Boards",
+          "architecture": "esp32",
           "version": "0.2.0",
           "category": "Contributed",
           "url": "https://github.com/AcidAlchamy/autotlm-core/releases/download/boards-0.2.0/autotlm-boards-0.2.0.zip",
