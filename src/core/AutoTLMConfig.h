@@ -49,6 +49,15 @@ class AutoTLMConfig {
   /** True if WiFi credentials are stored (the "is this unit provisioned?" test). */
   bool hasWifi();
 
+  /**
+   * The device's provisioning-AP password: a stable 8-char string derived
+   * from the chip id (same every boot, unique per unit — printable on a
+   * label in production). Used to bring the setup AP up as WPA2 instead of
+   * open, so a passer-by can't join it and POST new cloud creds. Not stored;
+   * computed. @return chars written (always 8 on ESP32)
+   */
+  size_t apPassword(char* out, size_t cap);
+
   // ------------------------------------------- provisioned device settings
   /** Persist the cloud ingest endpoint (URL + bearer token + push interval). */
   void saveCloud(const char* url, const char* token, uint32_t intervalMs);

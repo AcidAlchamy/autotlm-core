@@ -7,6 +7,7 @@
 #if defined(ESP32)
 
 #include <WiFi.h>
+#include <esp_random.h>
 
 // The whole setup page, self-contained (no external assets — the client has
 // no internet while joined to the provisioning AP).
@@ -70,6 +71,7 @@ button{width:100%;padding:12px;border:0;border-radius:8px;background:var(--acc);
 <option value="imperial">imperial (mph, &deg;F)</option></select>
 </div></div>
 </fieldset>
+<input type="hidden" name="csrf" id="csrf" value="%%CSRF%%">
 <button type="submit">Save &amp; start driving</button>
 </form>
 <div id="done"><h2>Saved!</h2><p>The unit is rebooting into your settings.<br>
@@ -94,6 +96,14 @@ document.getElementById('f').addEventListener('submit',function(ev){
 </script></div></body></html>)HTML";
 
 bool AutoTLMProvision::start(const char* apName, const char* apPass) {
+  return startImpl(apName, apPass, false);
+}
+
+bool AutoTLMProvision::startAlongsideStation(const char* apName, const char* apPass) {
+  return startImpl(apName, apPass, true);
+}
+
+bool AutoTLMProvision::startImpl(const char* apName, const char* apPass, bool alongsideSta) {
   if (m_active) return true;
 
   if (apName && apName[0]) {
@@ -104,11 +114,35 @@ bool AutoTLMProvision::start(const char* apName, const char* apPass) {
              (unsigned)(ESP.getEfuseMac() >> 16) & 0xFFFF);
   }
 
-  WiFi.mode(WIFI_AP);
-  if (!WiFi.softAP(m_apName, (apPass && apPass[0]) ? apPass : nullptr)) {
+  // AP password: caller's value wins; nullptr = the per-device WPA2 password
+  // (default, so the AP isn't open); "" = an explicit open AP (discouraged).
+  if (apPass) {
+    strncpy(m_apPass, apPass, sizeof(m_apPass) - 1);
+    m_apPass[sizeof(m_apPass) - 1] = 0;
+  } else if (m_config) {
+    m_config->apPassword(m_apPass, sizeof(m_apPass));
+  } else {
+    m_apPass[0] = 0;
+  }
+
+  // Per-session CSRF token: unguessable, embedded in the page we serve, and
+  // required by /save — so even a client that joined the AP can't POST creds
+  // without first GETting our page.
+  for (int i = 0; i < 16; i++) {
+    static const char h[] = "0123456789abcdef";
+    m_csrf[i] = h[esp_random() & 0x0F];
+  }
+  m_csrf[16] = 0;
+
+  // A WPA2 SSID needs an 8+ char key; a shorter one silently opens the AP.
+  const bool wpa2 = strlen(m_apPass) >= 8;
+  m_apSta = alongsideSta;
+  WiFi.mode(alongsideSta ? WIFI_AP_STA : WIFI_AP);
+  if (!WiFi.softAP(m_apName, wpa2 ? m_apPass : nullptr)) {
     if (m_log) m_log->println("PROVISION:softAP failed");
     return false;
   }
+  if (!wpa2) m_apPass[0] = 0;  // reflect reality in apPassword()
 
   // Catch-all DNS: every hostname resolves to us, so phones pop their
   // "sign in to network" sheet straight onto the setup page.
@@ -123,8 +157,9 @@ bool AutoTLMProvision::start(const char* apName, const char* apPass) {
 
   m_active = true;
   if (m_log)
-    m_log->printf("PROVISION:portal up — join WiFi \"%s\", open http://%s/\n",
-                  m_apName, WiFi.softAPIP().toString().c_str());
+    m_log->printf("PROVISION:portal up — join WiFi \"%s\"%s%s, open http://%s/\n",
+                  m_apName, m_apPass[0] ? " pass " : " (open)", m_apPass,
+                  WiFi.softAPIP().toString().c_str());
   return true;
 }
 
@@ -145,13 +180,19 @@ void AutoTLMProvision::stop() {
   if (!m_active) return;
   m_http.stop();
   m_dns.stop();
+  // Drop only the AP; if we were coexisting with STA (offline re-pair), leave
+  // the station link that the net task is managing alone.
   WiFi.softAPdisconnect(true);
+  if (!m_apSta) WiFi.mode(WIFI_STA);
   m_active = false;
   if (m_log) m_log->println("PROVISION:portal stopped");
 }
 
 void AutoTLMProvision::handleRoot() {
-  m_http.send_P(200, "text/html", PORTAL_HTML);
+  // Inject the per-session CSRF token into the page we serve.
+  String page = FPSTR(PORTAL_HTML);
+  page.replace("%%CSRF%%", m_csrf);
+  m_http.send(200, "text/html", page);
 }
 
 void AutoTLMProvision::handleScan() {
@@ -175,6 +216,14 @@ void AutoTLMProvision::handleScan() {
 void AutoTLMProvision::handleSave() {
   if (!m_config) {
     m_http.send(500, "text/plain", "no config store");
+    return;
+  }
+  // CSRF: the token is only obtainable by GETting our page over the (WPA2)
+  // AP, so a blind cross-site or drive-by POST can't carry it. Constant-ish
+  // compare is fine here — the token is single-use per portal session.
+  if (m_http.arg("csrf") != m_csrf) {
+    if (m_log) m_log->println("PROVISION:/save rejected (bad CSRF token)");
+    m_http.send(403, "text/plain", "forbidden");
     return;
   }
   const String ssid = m_http.arg("ssid");
@@ -212,10 +261,12 @@ void AutoTLMProvision::handleNotFound() {
 
 #else  // !ESP32 — no radio: the portal politely reports "not available".
 
-bool AutoTLMProvision::start(const char*, const char*) {
+bool AutoTLMProvision::startImpl(const char*, const char*, bool) {
   if (m_log) m_log->println("PROVISION:not available on this platform");
   return false;
 }
+bool AutoTLMProvision::start(const char* n, const char* p) { return startImpl(n, p, false); }
+bool AutoTLMProvision::startAlongsideStation(const char* n, const char* p) { return startImpl(n, p, true); }
 void AutoTLMProvision::tick() {}
 void AutoTLMProvision::stop() {}
 

@@ -52,6 +52,20 @@ bool AutoTLMConfig::hasWifi() {
   return has;
 }
 
+size_t AutoTLMConfig::apPassword(char* out, size_t cap) {
+  if (!out || cap < 9) { if (out && cap) out[0] = 0; return 0; }
+  // 8 chars from the 48-bit MAC, mapped to an unambiguous alphabet (no
+  // 0/O/1/I/l) so it reads cleanly off a label. Deterministic per unit.
+  static const char abc[] = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";  // 32 symbols
+  uint64_t mac = ESP.getEfuseMac();
+  for (int i = 0; i < 8; i++) {
+    out[i] = abc[mac & 0x1F];
+    mac >>= 5;
+  }
+  out[8] = 0;
+  return 8;
+}
+
 void AutoTLMConfig::saveCloud(const char* url, const char* token, uint32_t intervalMs) {
   m_prefs.begin("autotlm-cloud", false);
   m_prefs.putString("url", url ? url : "");
@@ -160,6 +174,12 @@ bool AutoTLMConfig::loadWifi(char* ssid, size_t ssidCap, char* pass, size_t pass
   return false;
 }
 bool AutoTLMConfig::hasWifi() { return false; }
+size_t AutoTLMConfig::apPassword(char* out, size_t cap) {
+  if (!out || cap < 9) { if (out && cap) out[0] = 0; return 0; }
+  strncpy(out, "autotlm0", cap - 1);
+  out[cap - 1] = 0;
+  return strlen(out);
+}
 void AutoTLMConfig::saveCloud(const char*, const char*, uint32_t) {}
 bool AutoTLMConfig::loadCloud(char* url, size_t urlCap, char* token, size_t tokenCap, uint32_t* intervalMs) {
   if (url && urlCap) url[0] = 0;

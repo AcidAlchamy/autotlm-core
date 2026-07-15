@@ -10,6 +10,8 @@
 
 // Retry WiFi this often while disconnected.
 #define WIFI_RETRY_MS 8000
+// How long a tryWifi() candidate gets to associate before we revert.
+#define WIFI_VALIDATE_MS 30000
 // Re-resolve the ingest host this often even when pushes succeed.
 #define DNS_REFRESH_MS 300000
 // Persist diagnostics this often.
@@ -49,6 +51,29 @@ void AutoTLMNet::wifi(const char* ssid, const char* pass) {
 
   if (m_log) m_log->printf("WIFI:connecting to \"%s\"\n", ssid);
   ensureTask();
+}
+
+void AutoTLMNet::tryWifi(const char* ssid, const char* pass) {
+  if (!ssid || !ssid[0]) return;
+  ensureMutex();
+  lockCfg();
+  strncpy(m_stagedSsid, ssid, sizeof(m_stagedSsid) - 1);
+  m_stagedSsid[sizeof(m_stagedSsid) - 1] = 0;
+  strncpy(m_stagedPass, pass ? pass : "", sizeof(m_stagedPass) - 1);
+  m_stagedPass[sizeof(m_stagedPass) - 1] = 0;
+  m_validateReq = true;
+  m_wifiWanted = true;  // keep the connection managed after this settles
+  unlockCfg();
+  m_wifiChange = AUTOTLM_WIFI_VALIDATING;
+  if (m_log) m_log->printf("WIFI:validating \"%s\" (keeping current on failure)\n", ssid);
+  ensureTask();
+}
+
+uint32_t AutoTLMNet::sinceConnectedMs() const {
+  if (WiFi.status() == WL_CONNECTED) return 0;
+  // Never associated this session → report a large-but-bounded age so the
+  // offline policy still trips after its window rather than never.
+  return m_lastAssocMs ? (millis() - m_lastAssocMs) : millis();
 }
 
 void AutoTLMNet::cloud(const char* url, const char* token, uint32_t intervalMs) {
@@ -157,6 +182,9 @@ void AutoTLMNet::taskLoop() {
   for (;;) {
     const uint32_t now = millis();
 
+    // Track the last association time (for sinceConnectedMs / offline policy).
+    if (WiFi.status() == WL_CONNECTED) m_lastAssocMs = now;
+
     // Snapshot the flags (and any fresh credentials) under the lock.
     lockCfg();
     const bool wifiWanted = m_wifiWanted;
@@ -164,15 +192,53 @@ void AutoTLMNet::taskLoop() {
     const uint32_t intervalMs = m_intervalMs;
     const bool reassoc = m_reassoc;
     m_reassoc = false;
+    const bool validateReq = m_validateReq;
+    m_validateReq = false;
     const bool pushAsap = m_pushNow;
     char ssid[AUTOTLM_NET_SSID_LEN], pass[AUTOTLM_NET_PASS_LEN];
-    if (reassoc || (wifiWanted && WiFi.status() != WL_CONNECTED)) {
-      memcpy(ssid, m_ssid, sizeof(ssid));
-      memcpy(pass, m_pass, sizeof(pass));
-    }
+    char staged[AUTOTLM_NET_SSID_LEN], stagedPass[AUTOTLM_NET_PASS_LEN];
+    memcpy(ssid, m_ssid, sizeof(ssid));
+    memcpy(pass, m_pass, sizeof(pass));
+    memcpy(staged, m_stagedSsid, sizeof(staged));
+    memcpy(stagedPass, m_stagedPass, sizeof(stagedPass));
     AutoTLMDiagSaver diagSaver = m_diagSaver;
     void* ctx = m_ctx;
     unlockCfg();
+
+    // ---- validate-and-rollback: try staged creds, keep the working ones ----
+    if (validateReq) {
+      WiFi.mode(WIFI_STA);
+      WiFi.disconnect();
+      WiFi.begin(staged, stagedPass);
+      m_validating = true;
+      m_validateStart = now;
+      m_wifiChange = AUTOTLM_WIFI_VALIDATING;
+    }
+    if (m_validating) {
+      if (WiFi.status() == WL_CONNECTED) {
+        // Staged creds work: promote them to the working set (the facade will
+        // persist to NVS on seeing OK). We connected on `staged`.
+        lockCfg();
+        memcpy(m_ssid, staged, sizeof(m_ssid));
+        memcpy(m_pass, stagedPass, sizeof(m_pass));
+        unlockCfg();
+        m_validating = false;
+        m_wifiChange = AUTOTLM_WIFI_OK;
+        m_lastAssocMs = now;
+        if (m_log) m_log->printf("WIFI:validated \"%s\" — now the saved network\n", staged);
+      } else if (now - m_validateStart > WIFI_VALIDATE_MS) {
+        // Staged creds never associated: fall back to the known-good network.
+        m_validating = false;
+        m_wifiChange = AUTOTLM_WIFI_REVERTED;
+        WiFi.disconnect();
+        WiFi.begin(ssid, pass);
+        lastWifiTry = now;
+        if (m_log) m_log->printf("WIFI:validation failed — reverted to \"%s\"\n", ssid);
+      }
+      // While validating, skip the normal (re)assoc/push branches below.
+      vTaskDelay(pdMS_TO_TICKS(40));
+      continue;
+    }
 
     if (reassoc) {
       // Fresh credentials (first call or a network switch): associate now.
@@ -422,6 +488,8 @@ void AutoTLMNet::pushFrame() {
 #else  // !ESP32 — no radio on this platform; everything reports "disabled".
 
 void AutoTLMNet::wifi(const char*, const char*) {}
+void AutoTLMNet::tryWifi(const char*, const char*) {}
+uint32_t AutoTLMNet::sinceConnectedMs() const { return 0; }
 void AutoTLMNet::cloud(const char*, const char*, uint32_t) {}
 void AutoTLMNet::attach(AutoTLMFrameProvider provider, AutoTLMDiagSaver diagSaver, void* ctx) {
   m_ctx = ctx;

@@ -3,6 +3,21 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
+## 2026-07-15 — v0.5.0: change your WiFi without fear, re-pair without tools
+
+- **A wrong WiFi password can never strand your unit.** Changing networks now
+  tries the new one while keeping the old — if the new password is wrong or
+  the network's not there, the unit quietly stays on its working connection
+  instead of dropping off the grid. (`car.changeWifi()`.)
+- **Lost your network? The unit offers itself back.** A provisioned unit that
+  can't find its WiFi for a couple of minutes automatically raises its setup
+  network again, so re-pairing from your phone needs no button and no cable.
+  Opt-in, and conservative — a brief dead zone mid-drive won't trigger it.
+- **The setup network is now private.** The onboarding access point comes up
+  as a secured (WPA2) network with a per-device password instead of open, and
+  its save step is protected against cross-site abuse — so nobody nearby can
+  point your unit's telemetry somewhere else during setup.
+
 ## 2026-07-12 — v0.4.0: drives survive dead spots
 
 - **Offline catch-up.** Lose WiFi in a parking garage or a tunnel mid-drive?

@@ -48,6 +48,14 @@ enum AutoTLMNetState {
   AUTOTLM_NET_STREAMING,  ///< pushes landing
 };
 
+/** Result of a tryWifi() validation attempt (poll via wifiChangeState()). */
+enum AutoTLMWifiChange {
+  AUTOTLM_WIFI_IDLE,        ///< no change in progress
+  AUTOTLM_WIFI_VALIDATING,  ///< trying the new credentials
+  AUTOTLM_WIFI_OK,          ///< new credentials associated — now the working set
+  AUTOTLM_WIFI_REVERTED,    ///< new credentials failed; reverted to the old ones
+};
+
 // Config buffer sizes. The token is sized for real-world bearer tokens
 // (JWTs routinely exceed 200 chars).
 #define AUTOTLM_NET_SSID_LEN 33
@@ -103,6 +111,27 @@ class AutoTLMNet {
   /** Frames currently waiting in the offline buffer. */
   uint16_t buffered() const { return m_bufCount; }
 
+  // ------------------------------------------------ validate-and-rollback
+  /**
+   * Try NEW WiFi credentials without losing the working ones. The current
+   * credentials are kept staged; the network task attempts the new ones for
+   * ~30 s and, if they don't associate, reverts to the old working network.
+   * Non-blocking — poll wifiChangeState(). This is the safe primitive behind
+   * every "change my WiFi" path (USB, BLE, app): a wrong password can never
+   * strand the device off-network.
+   */
+  void tryWifi(const char* ssid, const char* pass);
+  /** Current validate-and-rollback state (AUTOTLM_WIFI_*). */
+  int wifiChangeState() const { return m_wifiChange; }
+  /** Acknowledge an OK/REVERTED result, returning to IDLE. */
+  void clearWifiChange() { m_wifiChange = AUTOTLM_WIFI_IDLE; }
+  /**
+   * Milliseconds since the station was last associated (0 while connected).
+   * The offline-reprovision policy uses this to tell "briefly offline
+   * mid-drive" from "this network is really gone".
+   */
+  uint32_t sinceConnectedMs() const;
+
   // ------------------------------------------------------------- status
   bool wifiConnected() const;
   int rssi() const;                       ///< dBm, 0 when offline
@@ -151,6 +180,14 @@ class AutoTLMNet {
   bool m_cloudWanted = false;
   bool m_pushNow = false;  ///< one-shot out-of-cycle push request (mutex-guarded)
 
+  // validate-and-rollback: staged creds the task tries while keeping m_ssid/
+  // m_pass as the fallback (all mutex-guarded on write; see tryWifi).
+  char m_stagedSsid[AUTOTLM_NET_SSID_LEN] = "";
+  char m_stagedPass[AUTOTLM_NET_PASS_LEN] = "";
+  bool m_validateReq = false;
+  volatile int m_wifiChange = AUTOTLM_WIFI_IDLE;   ///< AUTOTLM_WIFI_*
+  volatile uint32_t m_lastAssocMs = 0;             ///< millis() of last association
+
   AutoTLMFrameProvider m_provider = nullptr;
   AutoTLMDiagSaver m_diagSaver = nullptr;
   void* m_ctx = nullptr;
@@ -184,6 +221,9 @@ class AutoTLMNet {
   char* m_batch = nullptr;        ///< lazy batch TX buffer
   uint32_t m_backoffUntil = 0;    ///< 429 rate-limit backoff deadline
   uint8_t m_backoffN = 0;
+
+  bool m_validating = false;      ///< task-owned: a tryWifi attempt is live
+  uint32_t m_validateStart = 0;
 #endif
 };
 
