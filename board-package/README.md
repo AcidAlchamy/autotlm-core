@@ -59,3 +59,12 @@ installed esp32 core by `install-local.ps1` (dev) and `make-release.ps1`
 (release zip) rather than committing ~12 MB of Espressif binaries to git —
 which also means a release is built against, and stays in sync with, the
 esp32 core version on the release machine.
+
+**Exception:** `autotlm/esp32/tools/partitions/autotlm_ota.csv` IS in git —
+it's ours, not Espressif's. It is the **locked AutoTLM One partition table**
+(owner ruling 2026-07-14): 4 MB flash as two 1.9 MB OTA app slots + 80 KB NVS
++ coredump, decided once so every unit flashed from boards 0.3.0 onward can
+receive BLE and OTA features later without a destructive field re-partition.
+It is the default `PartitionScheme`; the stock esp32 schemes remain in the
+menu for bench experiments only. Both copy scripts merge the esp32 core's
+partition files *around* it.

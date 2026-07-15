@@ -28,7 +28,11 @@ if (-not (Test-Path $esp32Root)) { throw 'esp32 core not installed — install e
 $esp32 = Get-ChildItem $esp32Root -Directory | Sort-Object Name -Descending | Select-Object -First 1
 $tools = Join-Path $staging 'tools'
 New-Item -ItemType Directory -Force $tools | Out-Null
-Copy-Item (Join-Path $esp32.FullName 'tools\partitions') $tools -Recurse
+# Merge contents (not the dir) — the repo platform now ships its own
+# tools\partitions\autotlm_ota.csv and it must survive alongside the core's.
+$parts = Join-Path $tools 'partitions'
+New-Item -ItemType Directory -Force $parts | Out-Null
+Copy-Item (Join-Path $esp32.FullName 'tools\partitions\*') $parts -Recurse
 foreach ($f in 'gen_esp32part.exe', 'gen_esp32part.py', 'espota.exe', 'espota.py') {
   Copy-Item (Join-Path $esp32.FullName "tools\$f") $tools
 }

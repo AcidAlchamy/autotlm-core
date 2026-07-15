@@ -3,6 +3,24 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
+## 2026-07-15 — v0.6.0: every sensor your car offers, freeze frames, and drives that keep their timeline
+
+- **The whole sensor menu.** Frames now tell every dashboard exactly which
+  sensors YOUR car offers (`obd.supported`), and the polled set nearly doubles
+  to the full standard OBD-II decode range — fuel trims, O2 sensors, timing
+  advance, EGR, evap, catalyst temps, pedal positions, torque, fuel rate and
+  more. Sensor pickers can finally show the car's real capabilities.
+- **Freeze frames.** When a trouble code sets, the car stores the sensor
+  snapshot from that exact moment — and now it rides in telemetry
+  (`dtc.freeze`), so "what was happening when the light came on" is a data
+  point, not a guess.
+- **Offline drives keep their timeline.** Buffered catch-up frames now carry
+  how old each one is (`age_ms`), so a tunnel or parking-garage gap uploads as
+  the real minute-by-minute history instead of one merged blob.
+- **Location provenance** (`gps.source`) and tougher bus parsing: corrupted
+  VINs are rejected instead of believed, and a glitchy reconnect can never
+  shrink the discovered sensor map mid-drive.
+
 ## 2026-07-15 — v0.5.0: change your WiFi without fear, re-pair without tools
 
 - **A wrong WiFi password can never strand your unit.** Changing networks now

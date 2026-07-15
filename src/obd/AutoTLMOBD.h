@@ -64,10 +64,16 @@ class AutoTLMOBD {
   // ---------------------------------------------------------- full sweep
   /** True if a value for this mode-01 PID has been read. */
   bool hasPid(uint8_t pid) const { return m_pidHave[pid]; }
-  /** Latest normalized value for a PID (see AutoTLMPids.h for units). */
+  /** Latest normalized value for a PID (see AutoTLMPids.h for units + fixed-point decimals). */
   int pidValue(uint8_t pid) const { return m_pidVal[pid]; }
-  /** How many PIDs the car declared support for. */
+  /** How many PIDs are being polled (advertised ∩ decodable). */
   int supportedCount() const { return m_nSupported; }
+  /** How many PIDs the car ADVERTISES via its supported-PID bitmasks. */
+  int advertisedCount() const { return m_nAdvertised; }
+  /** Advertised PID i (sorted ascending; 0 when out of range). */
+  uint8_t advertisedAt(int i) const {
+    return (i >= 0 && i < m_nAdvertised) ? m_advertised[i] : 0;
+  }
 
   // ---------------------------------------------------------------- DTCs
   int dtcCount() const { return m_dtcCount; }                ///< stored codes
@@ -103,8 +109,19 @@ class AutoTLMOBD {
   /** Route library log lines somewhere else (nullptr = quiet). */
   void setLogStream(Stream* s) { m_log = s; }
 
+  // ---------------------------------------------------------- freeze frame
+  /** The DTC the stored freeze frame belongs to ("" when none). */
+  const char* freezeCode() const { return m_freezeCode; }
+  /** PID/value pairs snapshotted when that code set (count; see freezePidAt/freezeValAt). */
+  int freezeCount() const { return m_freezeCount; }
+  uint8_t freezePidAt(int i) const { return (i >= 0 && i < m_freezeCount) ? m_freezePid[i] : 0; }
+  int freezeValAt(int i) const { return (i >= 0 && i < m_freezeCount) ? m_freezeVal[i] : 0; }
+
   // Snapshot support for the facade (copies state into the frame).
   void fillFrame(bool* pidHave, int* pidVal) const;
+  void fillFrameLists(uint8_t* supported, uint8_t* supportedCount, size_t supportedCap,
+                      char* freezeCode, size_t freezeCodeCap, uint8_t* freezePid,
+                      int* freezeVal, uint8_t* freezeCount, size_t freezeCap) const;
 
  private:
   struct ModuleState {
@@ -122,6 +139,7 @@ class AutoTLMOBD {
   void pollPids();
   void readDTCs();
   void readModuleDTCs();
+  void readFreeze();
   void rebuildAggregate();
 
   AutoTLMHAL* m_hal = nullptr;
@@ -138,9 +156,17 @@ class AutoTLMOBD {
 
   int  m_pidVal[256] = {0};
   bool m_pidHave[256] = {false};
-  uint8_t m_supported[64];
+  uint8_t m_supported[96];       ///< polled set: advertised ∩ decodable
   int m_nSupported = 0;
+  uint8_t m_advertised[96];      ///< everything the bitmasks advertise (sorted)
+  int m_nAdvertised = 0;
   uint32_t m_sweepIdx = 0;  // unsigned: wraparound keeps the modulo in range
+
+  // Freeze frame (mode 02, frame 0): the code that set it + a PID snapshot.
+  char m_freezeCode[8] = "";
+  uint8_t m_freezePid[12];
+  int m_freezeVal[12];
+  int m_freezeCount = 0;
 
   float m_volts = 0;
   char m_vin[24] = "";

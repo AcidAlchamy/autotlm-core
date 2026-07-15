@@ -21,7 +21,11 @@ Copy-Item (Join-Path $here 'autotlm\esp32\*') $dest -Recurse
 
 $tools = Join-Path $dest 'tools'
 New-Item -ItemType Directory -Force $tools | Out-Null
-Copy-Item (Join-Path $esp32.FullName 'tools\partitions') $tools -Recurse
+# Merge contents (not the dir) — the repo platform now ships its own
+# tools\partitions\autotlm_ota.csv and it must survive alongside the core's.
+$parts = Join-Path $tools 'partitions'
+New-Item -ItemType Directory -Force $parts | Out-Null
+Copy-Item (Join-Path $esp32.FullName 'tools\partitions\*') $parts -Recurse
 foreach ($f in 'gen_esp32part.exe', 'gen_esp32part.py', 'espota.exe', 'espota.py') {
   Copy-Item (Join-Path $esp32.FullName "tools\$f") $tools
 }

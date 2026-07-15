@@ -1,0 +1,11 @@
+# AutoTLM One — the locked production partition table (owner ruling 2026-07-14).
+# 4 MB flash, TWO generous OTA app slots + a generous NVS, decided ONCE so every
+# unit flashed from here on can receive BLE and OTA features later with no field
+# re-partition. OTA is a green-lit feature, not hypothetical headroom.
+#
+# Name,    Type, SubType,  Offset,   Size
+nvs,       data, nvs,      0x9000,   0x14000
+otadata,   data, ota,      0x1D000,  0x2000
+app0,      app,  ota_0,    0x20000,  0x1E0000
+app1,      app,  ota_1,    0x200000, 0x1E0000
+coredump,  data, coredump, 0x3E0000, 0x20000

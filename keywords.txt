@@ -36,6 +36,13 @@ buffered	KEYWORD2
 provision	KEYWORD2
 beginPortal	KEYWORD2
 provisioning	KEYWORD2
+advertisedCount	KEYWORD2
+advertisedAt	KEYWORD2
+freezeCode	KEYWORD2
+freezeCount	KEYWORD2
+freezePidAt	KEYWORD2
+freezeValAt	KEYWORD2
+pidDecimals	KEYWORD2
 changeWifi	KEYWORD2
 wifiChangeState	KEYWORD2
 setReprovisionOnLostWifi	KEYWORD2

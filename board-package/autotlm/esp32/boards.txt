@@ -20,7 +20,7 @@ one.bootloader.tool.default=esptool_py
 one.upload.tool=esptool_py
 one.upload.tool.default=esptool_py
 one.upload.tool.network=esp_ota
-one.upload.maximum_size=1310720
+one.upload.maximum_size=1966080
 one.upload.maximum_data_size=327680
 one.upload.flags=
 one.upload.extra_flags=
@@ -42,7 +42,7 @@ one.build.flash_size=4MB
 one.build.flash_freq=40m
 one.build.flash_mode=dio
 one.build.boot=dio
-one.build.partitions=default
+one.build.partitions=autotlm_ota
 one.build.defines=
 one.build.loop_core=-DARDUINO_RUNNING_CORE=1
 one.build.event_core=-DARDUINO_EVENT_RUNNING_CORE=1
@@ -58,11 +58,16 @@ one.menu.UploadSpeed.921600.upload.speed=921600
 one.menu.UploadSpeed.115200=115200
 one.menu.UploadSpeed.115200.upload.speed=115200
 
-one.menu.PartitionScheme.default=Default (1.3 MB app / 1.5 MB SPIFFS)
+# AutoTLM OTA is THE partition table (locked 2026-07-14, owner ruling): two
+# 1.9 MB OTA app slots + 80 KB NVS, so every unit flashed with it can receive
+# BLE + OTA features later with no field re-partition. The stock schemes stay
+# selectable for bench experiments only — nothing shipped uses them.
+one.menu.PartitionScheme.autotlm_ota=AutoTLM OTA (1.9 MB app x2 + 80 KB NVS — standard)
+one.menu.PartitionScheme.autotlm_ota.build.partitions=autotlm_ota
+one.menu.PartitionScheme.autotlm_ota.upload.maximum_size=1966080
+one.menu.PartitionScheme.default=ESP32 Default (1.3 MB app / 1.5 MB SPIFFS — bench only)
 one.menu.PartitionScheme.default.build.partitions=default
-one.menu.PartitionScheme.min_spiffs=Minimal SPIFFS (1.9 MB app)
-one.menu.PartitionScheme.min_spiffs.build.partitions=min_spiffs
-one.menu.PartitionScheme.min_spiffs.upload.maximum_size=1966080
-one.menu.PartitionScheme.huge_app=Huge App (3 MB app, no OTA)
+one.menu.PartitionScheme.default.upload.maximum_size=1310720
+one.menu.PartitionScheme.huge_app=Huge App (3 MB app, no OTA — bench only)
 one.menu.PartitionScheme.huge_app.build.partitions=huge_app
 one.menu.PartitionScheme.huge_app.upload.maximum_size=3145728

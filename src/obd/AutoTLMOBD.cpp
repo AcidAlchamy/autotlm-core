@@ -10,10 +10,14 @@
 // Every mode-01 PID AutoTLM knows how to normalize; the discovery sweep keeps
 // only the ones this car's ECU actually advertises. 0x42 (module voltage) is
 // included so boards without their own voltage sense can fall back to it.
+// Widened to the full common J1979 decode set (MOBILE's PID-breadth ask):
+// trims, narrowband O2, timing, EGR/evap, cat temps, pedals, torque, rates.
 static const uint8_t CANDIDATE_PIDS[] = {
     0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
-    0x10, 0x11, 0x1F, 0x21, 0x2C, 0x2D, 0x2F, 0x30, 0x31, 0x33, 0x3C, 0x3D,
-    0x42, 0x43, 0x45, 0x46, 0x49, 0x4C, 0x5C, 0x5E};
+    0x10, 0x11, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1F, 0x21,
+    0x2C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x3C, 0x3D, 0x3E, 0x3F,
+    0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D,
+    0x4E, 0x52, 0x59, 0x5B, 0x5C, 0x5D, 0x5E, 0x61, 0x62, 0x63};
 
 // The gauges: read every cycle no matter what.
 static const uint8_t FAST_PIDS[] = {PID_RPM, PID_SPEED, PID_COOLANT_TEMP,
@@ -51,6 +55,9 @@ void AutoTLMOBD::tick() {
     // that can't enumerate) keep the classic functional read.
     if (m_moduleCount > 0) readModuleDTCs();
     else readDTCs();
+    // Freeze frames move on the same slow cadence — they're snapshots of a
+    // past moment, staleness is correct.
+    readFreeze();
   }
 }
 
@@ -71,16 +78,69 @@ void AutoTLMOBD::tryInit() {
   discover();
 }
 
-void AutoTLMOBD::discover() {
-  if (m_hal->obdVIN(m_vin, sizeof(m_vin))) {
-    if (m_log) m_log->printf("VIN:%s\n", m_vin);
+// A real VIN is exactly 17 chars, uppercase A–Z (never I/O/Q) and 0–9.
+// Anything else is bus corruption dressed as a VIN — reject it and keep the
+// last good one (EMULATOR-LOOP-TEST-FINDINGS finding 2: "DRV0ErULAT0R00001").
+static bool plausibleVin(const char* v) {
+  int n = 0;
+  for (; v[n]; n++) {
+    const char c = v[n];
+    const bool okAlpha = (c >= 'A' && c <= 'Z') && c != 'I' && c != 'O' && c != 'Q';
+    const bool okDigit = (c >= '0' && c <= '9');
+    if (!okAlpha && !okDigit) return false;
   }
-  m_nSupported = 0;
+  return n == 17;
+}
+
+void AutoTLMOBD::discover() {
+  char vin[sizeof(m_vin)] = "";
+  if (m_hal->obdVIN(vin, sizeof(vin))) {
+    if (!plausibleVin(vin)) {
+      if (m_log) m_log->printf("VIN:rejected implausible \"%s\"%s\n", vin,
+                               m_vin[0] ? " (keeping previous)" : "");
+    } else if (strcmp(vin, m_vin) != 0) {
+      // A DIFFERENT (plausible) car: forget the old car's discovered PIDs.
+      // Same car reconnecting keeps its session sets (see below).
+      strncpy(m_vin, vin, sizeof(m_vin) - 1);
+      m_nSupported = 0;
+      m_nAdvertised = 0;
+      if (m_log) m_log->printf("VIN:%s\n", m_vin);
+    }
+  }
+
+  // Session sets only GROW (audit 2g: a corrupted supported-PID bitmap on a
+  // mid-session reconnect must never shrink an already-confirmed map). A new
+  // boot — or a new VIN above — still starts clean.
   m_sweepIdx = 0;
   for (size_t i = 0; i < sizeof(CANDIDATE_PIDS) && m_nSupported < (int)sizeof(m_supported); i++) {
-    if (m_hal->obdIsPIDSupported(CANDIDATE_PIDS[i])) m_supported[m_nSupported++] = CANDIDATE_PIDS[i];
+    if (!m_hal->obdIsPIDSupported(CANDIDATE_PIDS[i])) continue;
+    bool have = false;
+    for (int k = 0; k < m_nSupported; k++) {
+      if (m_supported[k] == CANDIDATE_PIDS[i]) { have = true; break; }
+    }
+    if (!have) m_supported[m_nSupported++] = CANDIDATE_PIDS[i];
   }
-  if (m_log) m_log->printf("OBD_PIDS:%d\n", m_nSupported);
+
+  // Everything the car ADVERTISES via the bitmasks (frame `obd.supported`) —
+  // a superset of what we poll; the bitmask PIDs themselves are skipped.
+  for (int p = 1; p < 256 && m_nAdvertised < (int)sizeof(m_advertised); p++) {
+    if ((p % 0x20) == 0) continue;
+    if (!m_hal->obdIsPIDSupported((uint8_t)p)) continue;
+    bool have = false;
+    for (int k = 0; k < m_nAdvertised; k++) {
+      if (m_advertised[k] == p) { have = true; break; }
+    }
+    if (!have) m_advertised[m_nAdvertised++] = (uint8_t)p;
+  }
+  // Keep the advertised list sorted (the frame contract promises ascending
+  // hex) — a grow-only merge can append out of order.
+  for (int i = 1; i < m_nAdvertised; i++) {
+    const uint8_t v = m_advertised[i];
+    int j = i - 1;
+    while (j >= 0 && m_advertised[j] > v) { m_advertised[j + 1] = m_advertised[j]; j--; }
+    m_advertised[j + 1] = v;
+  }
+  if (m_log) m_log->printf("OBD_PIDS:%d polled / %d advertised\n", m_nSupported, m_nAdvertised);
 
   // Which modules live on this bus? (One functional probe, every distinct
   // responder counted — boards that can't do it return 0.)
@@ -211,6 +271,44 @@ void AutoTLMOBD::readModuleDTCs() {
   rebuildAggregate();
 }
 
+// Mode-02 freeze frame, v1: ONE stored snapshot (frame 0, functional — the
+// primary emissions ECU answers), attributed to the code the ECU says caused
+// it. Multi-code cars keep one entry; deeper per-module freeze data can ride
+// physical addressing later without a contract change (freeze is a map).
+void AutoTLMOBD::readFreeze() {
+  if (m_dtcCount == 0) {
+    m_freezeCount = 0;
+    m_freezeCode[0] = 0;
+    return;
+  }
+  const int raw = m_hal->obdFreezeDTC();
+  if (raw <= 0) {  // 0 = none stored, -1 = board can't read mode 02
+    m_freezeCount = 0;
+    m_freezeCode[0] = 0;
+    return;
+  }
+  autotlm::formatDTC((uint16_t)raw, m_freezeCode);
+
+  // A compact, high-signal snapshot: load, coolant, trims, MAP, RPM, speed,
+  // intake temp, MAF, throttle, fuel level, module volts — capped at 12 so
+  // the read stays bounded on the bus.
+  static const uint8_t SNAP[] = {0x04, 0x05, 0x06, 0x07, 0x0B, 0x0C,
+                                 0x0D, 0x0F, 0x10, 0x11, 0x2F, 0x42};
+  m_freezeCount = 0;
+  for (uint8_t pid : SNAP) {
+    if (!m_hal->obdIsPIDSupported(pid)) continue;
+    int v;
+    if (m_hal->obdReadFreezePID(pid, v) &&
+        m_freezeCount < (int)sizeof(m_freezePid)) {
+      m_freezePid[m_freezeCount] = pid;
+      m_freezeVal[m_freezeCount] = v;
+      m_freezeCount++;
+    }
+  }
+  if (m_log && m_freezeCount)
+    m_log->printf("FREEZE:%s (%d pids)\n", m_freezeCode, m_freezeCount);
+}
+
 // The classic dtcCount()/dtcString()/mil() view (and the frame) become the
 // UNION of every module's stored codes — a C-code in the ABS module lights
 // mil() just like the check-engine lamp it represents.
@@ -276,6 +374,8 @@ void AutoTLMOBD::clearDTCs() {
   m_dtcCount = 0;
   m_dtcStr[0] = 0;
   m_seenCount = 0;
+  m_freezeCount = 0;  // mode 04 erases freeze frames too
+  m_freezeCode[0] = 0;
   for (int i = 0; i < m_moduleCount; i++) {
     // Keep the ids; wipe the lists. Permanent codes survive a clear by
     // design — the next per-module sweep repopulates them from mode 0A.
@@ -288,4 +388,21 @@ void AutoTLMOBD::clearDTCs() {
 void AutoTLMOBD::fillFrame(bool* pidHave, int* pidVal) const {
   memcpy(pidHave, m_pidHave, sizeof(m_pidHave));
   memcpy(pidVal, m_pidVal, sizeof(m_pidVal));
+}
+
+void AutoTLMOBD::fillFrameLists(uint8_t* supported, uint8_t* supportedCount,
+                                size_t supportedCap, char* freezeCode,
+                                size_t freezeCodeCap, uint8_t* freezePid,
+                                int* freezeVal, uint8_t* freezeCount,
+                                size_t freezeCap) const {
+  int n = m_nAdvertised < (int)supportedCap ? m_nAdvertised : (int)supportedCap;
+  memcpy(supported, m_advertised, n);
+  *supportedCount = (uint8_t)n;
+
+  strncpy(freezeCode, m_freezeCode, freezeCodeCap - 1);
+  freezeCode[freezeCodeCap - 1] = 0;
+  n = m_freezeCount < (int)freezeCap ? m_freezeCount : (int)freezeCap;
+  memcpy(freezePid, m_freezePid, n);
+  memcpy(freezeVal, m_freezeVal, n * sizeof(int));
+  *freezeCount = (uint8_t)n;
 }

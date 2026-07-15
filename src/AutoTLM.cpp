@@ -205,6 +205,11 @@ void AutoTLM::composeFrame() {
   m_frame.volts = m_obd.volts();
   strncpy(m_frame.vin, m_obd.vin(), sizeof(m_frame.vin) - 1);
   m_obd.fillFrame(m_frame.pidHave, m_frame.pidVal);
+  m_obd.fillFrameLists(m_frame.supported, &m_frame.supportedCount,
+                       sizeof(m_frame.supported), m_frame.freezeCode,
+                       sizeof(m_frame.freezeCode), m_frame.freezePid,
+                       m_frame.freezeVal, &m_frame.freezeCount,
+                       sizeof(m_frame.freezePid));
 
   m_frame.mil = m_obd.mil();
   strncpy(m_frame.dtc, m_obd.dtcString(), sizeof(m_frame.dtc) - 1);

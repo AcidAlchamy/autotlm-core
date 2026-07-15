@@ -330,6 +330,9 @@ void AutoTLMNet::bufferLiveFrame() {
     m_bufCount = 0;
   }
   provider(ctx, m_buf[m_bufHead]);
+  // Stamp capture time so the catch-up POST can carry each frame's age
+  // (age_ms = send time − capture time; ingest reconstructs the timeline).
+  m_buf[m_bufHead].capturedMs = millis();
   m_bufHead = (uint8_t)((m_bufHead + 1) % m_bufCap);
   if (m_bufCount < m_bufCap) m_bufCount = m_bufCount + 1;  // full = oldest overwritten
 }
@@ -403,11 +406,11 @@ void AutoTLMNet::pushFrame() {
         // Oldest-first out of the ring (head points at the next write slot).
         const int idx =
             ((int)m_bufHead - (int)m_bufCount + inBatch + 4 * (int)m_bufCap) % (int)m_bufCap;
-        char one[2048];
-        const size_t n = m_buf[idx].toJson(one, sizeof(one));
+        m_buf[idx].ageMs = millis() - m_buf[idx].capturedMs;  // stamped at send
+        const size_t n = m_buf[idx].toJson(m_one, sizeof(m_one));
         if (len + n + 3 >= AUTOTLM_NET_BATCH_BYTES) break;
         if (inBatch) m_batch[len++] = ',';
-        memcpy(m_batch + len, one, n);
+        memcpy(m_batch + len, m_one, n);
         len += n;
         inBatch++;
       }

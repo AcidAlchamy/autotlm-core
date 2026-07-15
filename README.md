@@ -141,8 +141,10 @@ is CSRF-guarded.
 
 **OBD (`car.obd()`)** — `connected()`, `rpm()`, `speedKph()`, `coolantC()`,
 `loadPct()`, `throttlePct()`, `volts()`, `vin()`, `hasPid(pid)`,
-`pidValue(pid)`, `supportedCount()`, `dtcCount()`, `dtcAt(i)`, `mil()`,
-`clearDTCs()`, `setPollInterval(ms)` — plus the multi-module view:
+`pidValue(pid)`, `supportedCount()`, `advertisedCount()`, `advertisedAt(i)`,
+`dtcCount()`, `dtcAt(i)`, `mil()`, `clearDTCs()`, `setPollInterval(ms)`,
+freeze frames (`freezeCode()`, `freezePidAt(i)`, `freezeValAt(i)`) — plus
+the multi-module view:
 `moduleCount()`, `module(i)`, `moduleDtcAt(i, j)`, `modulePendingAt(i, j)`,
 `modulePermanentAt(i, j)`. A real car is several computers (engine,
 transmission, ABS, airbag...); AutoTLM enumerates them automatically and
@@ -168,9 +170,13 @@ key/value store for your own sketch (`putString`/`getString`,
 `putInt`/`getInt`).
 
 Absent sub-objects are omitted, never zero-filled — no GPS fix means no
-`gps` object (consumers null-check; the cloud ingest contract). Frames
-captured while WiFi is down are batched into one catch-up POST on reconnect
-(offline buffer: 24 frames by default, `car.net().setBufferFrames(n)`).
+`gps` object (consumers null-check; the cloud ingest contract). Frames also
+carry the car's advertised sensor menu (`obd.supported`), the freeze-frame
+snapshot per trouble code (`dtc.freeze`) and location provenance
+(`gps.source`). Frames captured while WiFi is down are batched into one
+catch-up POST on reconnect (offline buffer: 24 frames by default,
+`car.net().setBufferFrames(n)`), each stamped with its age (`age_ms`) so the
+drive's timeline survives the gap.
 Values use SI units end to end: km/h, °C, kPa, g/s. Dashboards convert for
 display — the portal's units choice is stored for them (and for your sketch
 via `car.config().units(...)`); the frame itself stays SI.

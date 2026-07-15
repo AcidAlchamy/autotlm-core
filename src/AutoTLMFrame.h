@@ -42,6 +42,8 @@ struct AutoTLMFrame {
 
   // ---- OBD-II ----
   bool  obdConnected;               ///< true once the ECU answers
+  uint8_t supported[96];            ///< PIDs the car ADVERTISES (sorted hex)
+  uint8_t supportedCount;           ///< entries in supported[]
   int   rpm;                        ///< engine RPM
   int   speedKph;                   ///< vehicle speed, km/h
   int   coolantC;                   ///< coolant temperature, °C
@@ -55,6 +57,14 @@ struct AutoTLMFrame {
   // ---- DTCs (the check-engine light) ----
   bool mil;                         ///< malfunction indicator lamp inferred (any code stored)
   char dtc[AUTOTLM_DTC_STR_LEN];     ///< comma-separated codes, e.g. "P0171,P0420"
+  char freezeCode[8];               ///< the DTC the freeze frame belongs to ("" = none)
+  uint8_t freezePid[12];            ///< freeze-frame PID snapshot (mode 02)
+  int  freezeVal[12];               ///< values, same normalization as pids
+  uint8_t freezeCount;              ///< entries in freezePid/freezeVal
+
+  // ---- offline catch-up bookkeeping ----
+  uint32_t capturedMs;              ///< millis() when this frame was buffered (device-internal)
+  uint32_t ageMs;                   ///< capture-to-send age; serialized as age_ms when > 0
 
   // ---- GNSS ----
   bool   fix;                       ///< true when position is valid
