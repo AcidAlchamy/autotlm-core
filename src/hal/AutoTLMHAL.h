@@ -90,6 +90,22 @@ class AutoTLMHAL {
   virtual bool obdVIN(char* buf, size_t bufsize) { (void)buf; (void)bufsize; return false; }
 
   /**
+   * The DTC that caused the stored freeze frame (mode 02 PID 02, frame 0).
+   * @return the raw 16-bit code, 0 if no freeze frame is stored, -1 if the
+   *         board can't read mode 02 (the default).
+   */
+  virtual int obdFreezeDTC() { return -1; }
+
+  /**
+   * Read one PID from the stored freeze frame (mode 02, frame 0), normalized
+   * exactly like obdReadPID. Boards that can't → false (the default).
+   */
+  virtual bool obdReadFreezePID(uint8_t pid, int& value) {
+    (void)pid; (void)value;
+    return false;
+  }
+
+  /**
    * Battery voltage. Boards with a voltage sense (the ONE+ co-processor)
    * measure it directly; boards without return NAN and AutoTLMOBD falls back
    * to PID 0x42 (control module voltage).

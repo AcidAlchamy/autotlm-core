@@ -7,6 +7,8 @@
 #include <stdarg.h>
 #include <string.h>
 
+#include "core/AutoTLMPids.h"
+
 void AutoTLMFrame::clear() {
   memset(this, 0, sizeof(*this));
   rssi = 0;
@@ -52,6 +54,10 @@ size_t AutoTLMFrame::toJson(char* buf, size_t cap) const {
   jcat(buf, cap, len, "\",\"fw_gnss\":\"%s\",\"rssi\":%d,\"modules\":%d},",
        gnssUp ? "OK" : "NO", rssi, (int)moduleCount);
 
+  // Offline catch-up frames carry their capture-to-send age so ingest can
+  // reconstruct capture time (ts = receivedAt - age_ms). Live frames omit it.
+  if (ageMs > 0) jcat(buf, cap, len, "\"age_ms\":%lu,", (unsigned long)ageMs);
+
   // Contract rule (AutoTLM Cloud API.md): sub-objects that have nothing real
   // to say are OMITTED — never emitted zero-filled. No ECU answering = no
   // "obd", no fix = no "gps", no IMU fitted = no "imu", no codes and no MIL
@@ -68,10 +74,30 @@ size_t AutoTLMFrame::toJson(char* buf, size_t cap) const {
     bool first = true;
     for (int p = 0; p < 256; p++) {
       if (!pidHave[p]) continue;
-      jcat(buf, cap, len, "%s\"%02X\":%d", first ? "" : ",", p, pidVal[p]);
+      // Fixed-point PIDs (trims, O2 volts, lambda, timing) emit with their
+      // decimals restored; everything else stays a bare integer.
+      const uint8_t d = autotlm::pidDecimals((uint8_t)p);
+      if (d == 0) {
+        jcat(buf, cap, len, "%s\"%02X\":%d", first ? "" : ",", p, pidVal[p]);
+      } else {
+        int div = 1;
+        for (uint8_t k = 0; k < d; k++) div *= 10;
+        jcat(buf, cap, len, "%s\"%02X\":%.*f", first ? "" : ",", p, (int)d,
+             (double)pidVal[p] / div);
+      }
       first = false;
     }
-    jcat(buf, cap, len, "}},");
+    jcat(buf, cap, len, "}");
+
+    // What the car advertises (supported-PID bitmasks) — the sensor picker's
+    // menu; a superset of the keys in pids.
+    if (supportedCount > 0) {
+      jcat(buf, cap, len, ",\"supported\":[");
+      for (int i = 0; i < supportedCount; i++)
+        jcat(buf, cap, len, "%s\"%02X\"", i ? "," : "", supported[i]);
+      jcat(buf, cap, len, "]");
+    }
+    jcat(buf, cap, len, "},");
   }
 
   if (mil || dtc[0]) {
@@ -87,13 +113,37 @@ size_t AutoTLMFrame::toJson(char* buf, size_t cap) const {
       p += n;
       if (*p == ',') p++;
     }
-    jcat(buf, cap, len, "]},");
+    jcat(buf, cap, len, "]");
+
+    // Freeze frame: the sensor state from when freezeCode set, keyed by code
+    // (a map, so richer multi-code freeze data stays contract-compatible).
+    if (freezeCount > 0 && freezeCode[0]) {
+      jcat(buf, cap, len, ",\"freeze\":{\"");
+      jstr(buf, cap, len, freezeCode);
+      jcat(buf, cap, len, "\":{");
+      for (int i = 0; i < freezeCount; i++) {
+        const uint8_t d = autotlm::pidDecimals(freezePid[i]);
+        if (d == 0) {
+          jcat(buf, cap, len, "%s\"%02X\":%d", i ? "," : "", freezePid[i], freezeVal[i]);
+        } else {
+          int div = 1;
+          for (uint8_t k = 0; k < d; k++) div *= 10;
+          jcat(buf, cap, len, "%s\"%02X\":%.*f", i ? "," : "", freezePid[i],
+               (int)d, (double)freezeVal[i] / div);
+        }
+      }
+      jcat(buf, cap, len, "}}");
+    }
+    jcat(buf, cap, len, "},");
   }
 
   if (fix) {
+    // source:"internal" = the device's own GNSS composed this fix. "phone" is
+    // written only by AutoTLM Cloud when it merges phone GPS (its merge rule
+    // keys on this field); the device never emits it.
     jcat(buf, cap, len,
-         "\"gps\":{\"fix\":true,\"lat\":%.6f,\"lng\":%.6f,\"alt_m\":%.1f,"
-         "\"speed_kph\":%.1f,\"course\":%.0f,\"sats\":%d,\"hdop\":%.2f},",
+         "\"gps\":{\"fix\":true,\"source\":\"internal\",\"lat\":%.6f,\"lng\":%.6f,"
+         "\"alt_m\":%.1f,\"speed_kph\":%.1f,\"course\":%.0f,\"sats\":%d,\"hdop\":%.2f},",
          lat, lng, altM, gpsSpeedKph, course, sats, hdop);
   }
 

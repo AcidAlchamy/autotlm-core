@@ -1,7 +1,7 @@
 # AutoTLM Core — API reference
 
-Complete public API of AutoTLM Core v0.5.0: **~142 public functions across
-the facade, 7 modules, the HAL interface and 2 helpers.** This file is the
+Complete public API of AutoTLM Core v0.6.0: **~150 public functions across
+the facade, 7 modules, the HAL interface and 3 helpers.** This file is the
 source of truth for the website/wiki — field names, units and defaults here
 match the code exactly.
 
@@ -45,11 +45,15 @@ the status LED. Beginner API lives here; power users reach through
 
 ---
 
-## `car.obd()` — OBD-II: PIDs, DTCs, VIN (29)
+## `car.obd()` — OBD-II: PIDs, DTCs, VIN, freeze frames (35)
 
 Lazy init (never blocks startup; retries every 10 s in the background),
 tiered polling (5 headline gauge PIDs every cycle + round-robin through
-everything the ECU supports), DTCs read every 20 s.
+everything the ECU supports), DTCs + the freeze frame read every 20 s.
+Hardened against bus corruption: an implausible VIN (wrong length or
+charset) is rejected in favor of the last good one, and a mid-session
+re-discovery can only ADD to the supported-PID sets, never shrink them
+(a fresh boot — or a different car's VIN — still starts clean).
 
 | Function | What it does |
 |---|---|
@@ -62,8 +66,12 @@ everything the ECU supports), DTCs read every 20 s.
 | `float volts()` | Battery voltage (board sense, or PID 0x42 fallback). |
 | `const char* vin()` | Vehicle identification number (`""` until read). |
 | `bool hasPid(pid)` | Has a value for this mode-01 PID been read? |
-| `int pidValue(pid)` | Latest normalized value for any PID (units per `AutoTLMPids.h`). |
-| `int supportedCount()` | How many PIDs the car declared support for. |
+| `int pidValue(pid)` | Latest normalized value for any PID (units per `AutoTLMPids.h`; fixed-point ×10^`pidDecimals(pid)` for trims/O2/λ/timing). |
+| `int supportedCount()` | How many PIDs are being polled (advertised ∩ decodable). |
+| `int advertisedCount()` | How many PIDs the car ADVERTISES via its bitmasks (the frame's `obd.supported`). |
+| `uint8_t advertisedAt(i)` | Advertised PID i, sorted ascending (0 out of range). |
+| `const char* freezeCode()` | The DTC the stored freeze frame belongs to (`""` = none). |
+| `int freezeCount()` / `uint8_t freezePidAt(i)` / `int freezeValAt(i)` | The freeze-frame PID snapshot (3 functions; same normalization as live PIDs). |
 | `int dtcCount()` / `const char* dtcAt(i)` | Stored trouble codes, e.g. `"P0171"` — on multi-module cars, the UNION across all modules. |
 | `bool mil()` | Check-engine light (inferred: any code stored). |
 | `const char* dtcString()` | All codes comma-joined: `"P0171,P0420"`. |
@@ -185,19 +193,71 @@ across cores. `clear()` resets to "unknown"; `toJson(buf, cap)` serializes to
 the ingest contract — **field names are stable**, dashboards consume them
 as-is:
 
-`device.{id,type,mems,fw_gnss,rssi,modules}` · `obd.{connected,speed_kph,rpm,
-coolant_c,load_pct,throttle_pct,volts,vin,pids{...}}` · `dtc.{mil,codes[]}` ·
-`gps.{fix,lat,lng,alt_m,speed_kph,course,sats,hdop}` · `imu.{ax,ay,az,gx,gy,gz}`
+`device.{id,type,mems,fw_gnss,rssi,modules}` · `age_ms` ·
+`obd.{connected,speed_kph,rpm,coolant_c,load_pct,throttle_pct,volts,vin,
+pids{...},supported[]}` · `dtc.{mil,codes[],freeze{...}}` ·
+`gps.{fix,source,lat,lng,alt_m,speed_kph,course,sats,hdop}` ·
+`imu.{ax,ay,az,gx,gy,gz}`
 
 **Absent sub-objects are OMITTED, never zero-filled** (the AutoTLM Cloud
 ingest contract): no ECU answering → no `obd`, no fix → no `gps`, no IMU →
-no `imu`, no codes and no MIL → no `dtc`. Consumers null-check.
+no `imu`, no codes and no MIL → no `dtc`, no freeze frame → no `dtc.freeze`,
+live (non-buffered) frame → no `age_ms`. Consumers null-check.
 
-PID map keys are uppercase mode-01 hex; values are normalized integers.
+### The v0.6.0 contract additions
+
+- **`obd.supported`** — what THIS car advertises via the supported-PID
+  bitmasks (`00/20/40/60/80/A0/C0`): uppercase hex, sorted, deduped, present
+  in every frame where `obd` is present. A superset of the keys in `pids`
+  (advertised ≠ polled) — sensor pickers grey out the rest.
+
+- **`dtc.freeze`** — mode-02 freeze frame, a map of **code → PID snapshot**.
+  Snapshot shape mirrors `obd.pids` (uppercase hex keys, same normalization)
+  so decode logic is reused verbatim. Omitted when no freeze data; refreshes
+  on the DTC cadence (~20 s). v1 carries the ECU's stored freeze frame (frame
+  0) keyed by the code the ECU attributes it to; the map shape means richer
+  per-module freeze data can land later without a contract change:
+
+  ```json
+  "dtc": { "mil": true, "codes": ["P0171"],
+           "freeze": { "P0171": { "04": 27, "05": 89, "0C": 1320, "0D": 20, "11": 14 } } }
+  ```
+
+- **`gps.source`** — location provenance, inside `gps`: `"internal"` whenever
+  the device composed a real GNSS fix. `"phone"` is written by AutoTLM Cloud
+  when it merges phone GPS (never by the device); no fix keeps its existing
+  representation (no `gps` object). Cloud's merge rule keys on it: inject
+  phone GPS only when `gps` is absent or `source != "internal"`.
+
+- **`age_ms`** — top-level, on batched offline catch-up frames only:
+  milliseconds between frame capture and the POST that carried it (monotonic;
+  the device has no RTC). Omitted on live frames (= 0). Ingest reconstructs
+  capture time as `receivedAt − age_ms`.
+
+### `pids` values: units and precision
+
+Keys are uppercase mode-01 hex. Values are JSON **numbers**: integers for
+most PIDs, fixed-decimal (and signed where the PID is signed) for the rest —
+parse as numbers, not ints. The polled set is the car's advertised PIDs ∩
+the ~58-PID decode table (trims, narrowband O2, timing, EGR/evap, cat temps,
+pedals, torque, rates, ...). Non-integer/signed PIDs:
+
+| PID(s) | Channel | Emitted as |
+|---|---|---|
+| `06`–`09` | short/long-term fuel trim B1/B2 | %, signed, 1 decimal (−100.0…+99.2) |
+| `2D` | EGR error | %, signed, 1 decimal |
+| `0E` | timing advance | °, signed, 1 decimal (−64.0…+63.5) |
+| `14`–`1B` | narrowband O2 voltage B1S1…B2S4 | V, 3 decimals (0…1.275) |
+| `44` | commanded air–fuel equivalence ratio λ | ratio, 2 decimals |
+| `32` | evap system vapor pressure | Pa, signed integer |
+| `61` / `62` | demanded / actual engine torque | %, signed integer (−125…130) |
+
+Everything else keeps the established integer conventions (RPM in rpm, temps
+in °C, percents 0–100, pressures in kPa, voltage `42` in V).
 
 ---
 
-## `AutoTLMHAL` — porting to new hardware (24 virtuals)
+## `AutoTLMHAL` — porting to new hardware (26 virtuals)
 
 Subclass this + pass to `car.begin(yourHal)`; nothing else in the library
 knows what board it's on. Anything the board lacks can honestly return
@@ -205,9 +265,11 @@ false — modules treat that as "not fitted" and carry on.
 
 Required: `begin, boardId, obdInit, obdReadPID, obdIsPIDSupported,
 obdReadDTC, gnssBegin, gnssAvailable, gnssRead, imuBegin, imuRead`.
-Optional: `deviceType, obdEnd, obdClearDTC, obdVIN, obdBatteryVoltage,
-obdEnumerate, obdReadDTCFrom, canAvailable, canRead, canWrite, gnssPower,
-imuName, led` (+ virtual dtor). `obdEnumerate`/`obdReadDTCFrom` power the
+Optional: `deviceType, obdEnd, obdClearDTC, obdVIN, obdFreezeDTC,
+obdReadFreezePID, obdBatteryVoltage, obdEnumerate, obdReadDTCFrom,
+canAvailable, canRead, canWrite, gnssPower, imuName, led` (+ virtual dtor).
+`obdFreezeDTC`/`obdReadFreezePID` power `dtc.freeze` (mode 02, frame 0);
+boards that can't read mode 02 simply never emit freeze data. `obdEnumerate`/`obdReadDTCFrom` power the
 multi-module view: one functional probe collects every responder
 (0x7E8..0x7EF), then stored/pending/permanent DTCs are read per module by
 physical addressing.
@@ -224,11 +286,12 @@ struct) and `BoardFreematicsOnePlus` (deprecated benchmark, removal planned).
 
 ---
 
-## Helpers — `namespace autotlm` (2)
+## Helpers — `namespace autotlm` (3)
 
 | Function | What it does |
 |---|---|
-| `int normalizePid(pid, A, B)` | Raw OBD bytes → the shared integer conventions (RPM = raw/4, temps = A−40 °C, percents = A·100/255, voltage = raw/1000...). Same math on every board, so a frame value means the same thing everywhere. |
+| `int normalizePid(pid, A, B)` | Raw OBD bytes → the shared conventions (RPM = raw/4, temps = A−40 °C, percents = A·100/255, voltage = raw/1000...). PIDs with `pidDecimals(pid) > 0` store fixed-point ×10^decimals. Same math on every board, so a frame value means the same thing everywhere. |
+| `uint8_t pidDecimals(pid)` | Decimal places a PID's stored value carries (trims/EGR err/timing = 1, λ = 2, O2 volts = 3, else 0) — the frame serializer divides them back out. |
 | `void formatDTC(code, buf)` | 16-bit DTC → `"P0171"` string form. |
 
 Plus the full set of `PID_*` constants (mode-01 names → hex) in
@@ -241,13 +304,13 @@ Plus the full set of `PID_*` constants (mode-01 names → hex) in
 | Area | Public functions |
 |---|---|
 | `AutoTLM` facade | 28 |
-| OBD | 29 |
+| OBD | 35 |
 | GNSS | 6 |
 | IMU | 5 |
 | Net | 19 |
 | Provisioning | 9 |
 | Config | 18 |
-| Frame | 2 (+35 documented fields) |
-| HAL interface | 24 virtuals |
-| Helpers | 2 |
-| **Total** | **≈142** |
+| Frame | 2 (+40 documented fields) |
+| HAL interface | 26 virtuals |
+| Helpers | 3 |
+| **Total** | **≈150** |

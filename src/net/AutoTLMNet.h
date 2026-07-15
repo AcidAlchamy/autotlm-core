@@ -212,7 +212,8 @@ class AutoTLMNet {
   bool m_haveIp = false;      // (cloud() invalidates it under the mutex)
   uint32_t m_ipAt = 0;
   AutoTLMFrame m_snapshot;     // task-owned copy (never touched by core 1)
-  char m_json[2048];
+  char m_json[3072];           // sized for wide-PID frames (+supported/freeze)
+  char m_one[3072];            // per-ring-frame serialize buffer (off the task stack)
 
   // ---- offline buffer + batching (all task-owned) ----
   AutoTLMFrame* m_buf = nullptr;  ///< lazy ring buffer

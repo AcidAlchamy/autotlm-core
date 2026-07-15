@@ -29,6 +29,14 @@
 #define PID_INTAKE_TEMP 0x0F
 #define PID_MAF_FLOW 0x10
 #define PID_THROTTLE 0x11
+#define PID_O2_B1S1 0x14
+#define PID_O2_B1S2 0x15
+#define PID_O2_B1S3 0x16
+#define PID_O2_B1S4 0x17
+#define PID_O2_B2S1 0x18
+#define PID_O2_B2S2 0x19
+#define PID_O2_B2S3 0x1A
+#define PID_O2_B2S4 0x1B
 #define PID_RUNTIME 0x1F
 #define PID_DISTANCE_WITH_MIL 0x21
 #define PID_COMMANDED_EGR 0x2C
@@ -70,15 +78,42 @@
 namespace autotlm {
 
 /**
+ * How many decimal places a PID's stored value carries (fixed-point): the
+ * frame serializer divides by 10^decimals when emitting JSON, so sub-integer
+ * PIDs (O2 volts, lambda) and signed fractional ones (fuel trims, timing
+ * advance) keep their resolution while storage stays plain int.
+ */
+inline uint8_t pidDecimals(uint8_t pid) {
+  switch (pid) {
+    case PID_SHORT_TERM_FUEL_TRIM_1:
+    case PID_LONG_TERM_FUEL_TRIM_1:
+    case PID_SHORT_TERM_FUEL_TRIM_2:
+    case PID_LONG_TERM_FUEL_TRIM_2:
+    case PID_EGR_ERROR:
+    case PID_TIMING_ADVANCE:
+      return 1;  // stored in tenths (%, °)
+    case PID_AIR_FUEL_EQUIV_RATIO:
+      return 2;  // stored in hundredths (λ)
+    case PID_O2_B1S1: case PID_O2_B1S2: case PID_O2_B1S3: case PID_O2_B1S4:
+    case PID_O2_B2S1: case PID_O2_B2S2: case PID_O2_B2S3: case PID_O2_B2S4:
+      return 3;  // stored in millivolts (V)
+    default:
+      return 0;
+  }
+}
+
+/**
  * Normalize a raw mode-01 payload (data bytes A, B — the bytes after
- * "41 <pid>") into the AutoTLM integer value convention.
+ * "41 <pid>") into the AutoTLM integer value convention. PIDs with
+ * pidDecimals() > 0 store fixed-point (value × 10^decimals).
  */
 inline int normalizePid(uint8_t pid, uint8_t A, uint8_t B) {
   const int large = ((int)A << 8) | B;
   switch (pid) {
     case PID_RPM:
-    case PID_EVAP_SYS_VAPOR_PRESSURE:
       return large >> 2;
+    case PID_EVAP_SYS_VAPOR_PRESSURE:
+      return (int)(int16_t)large / 4;  // SIGNED two-byte, quarter-Pa
     case PID_FUEL_PRESSURE:
       return (int)A * 3;
     case PID_COOLANT_TEMP:
@@ -105,15 +140,16 @@ inline int normalizePid(uint8_t pid, uint8_t A, uint8_t B) {
     case PID_MAF_FLOW:
       return large / 100;
     case PID_TIMING_ADVANCE:
-      return (int)(A / 2) - 64;
+      return (int)A * 5 - 640;  // tenths of a degree (true res is 0.5°)
     case PID_DISTANCE:
     case PID_DISTANCE_WITH_MIL:
     case PID_TIME_WITH_MIL:
     case PID_TIME_SINCE_CODES_CLEARED:
     case PID_RUNTIME:
-    case PID_FUEL_RAIL_PRESSURE:
     case PID_ENGINE_REF_TORQUE:
       return large;
+    case PID_FUEL_RAIL_PRESSURE:
+      return large * 10;  // kPa (10 kPa/bit per J1979)
     case PID_CONTROL_MODULE_VOLTAGE:
       return large / 1000;
     case PID_ENGINE_FUEL_RATE:
@@ -126,7 +162,10 @@ inline int normalizePid(uint8_t pid, uint8_t A, uint8_t B) {
     case PID_SHORT_TERM_FUEL_TRIM_2:
     case PID_LONG_TERM_FUEL_TRIM_2:
     case PID_EGR_ERROR:
-      return ((int)A - 128) * 100 / 128;
+      return ((int)A - 128) * 1000 / 128;  // tenths of a percent, signed
+    case PID_O2_B1S1: case PID_O2_B1S2: case PID_O2_B1S3: case PID_O2_B1S4:
+    case PID_O2_B2S1: case PID_O2_B2S2: case PID_O2_B2S3: case PID_O2_B2S4:
+      return (int)A * 5;  // millivolts (A/200 V); B (trim) not carried
     case PID_FUEL_INJECTION_TIMING:
       return (large - 26880) / 128;
     case PID_CATALYST_TEMP_B1S1:

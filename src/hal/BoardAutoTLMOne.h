@@ -136,6 +136,27 @@ class BoardAutoTLMOne : public AutoTLMHAL {
 
   bool obdIsPIDSupported(uint8_t pid) override { return pidBit(pid); }
 
+  int obdFreezeDTC() override {
+    // Mode 02 PID 02, frame 0 → "42 02 00 <code hi> <code lo>".
+    const uint8_t req[] = {0x02, 0x02, 0x00};
+    uint8_t resp[8];
+    const int n = obdRequest(req, sizeof(req), resp, sizeof(resp));
+    if (n < 5 || resp[0] != 0x42 || resp[1] != 0x02) return -1;
+    return ((int)resp[3] << 8) | resp[4];  // 0 = no freeze frame stored
+  }
+
+  bool obdReadFreezePID(uint8_t pid, int& value) override {
+    // Mode 02 payload mirrors mode 01 with a frame byte: "42 <pid> <frame> <data...>".
+    const uint8_t req[] = {0x02, pid, 0x00};
+    uint8_t resp[8];
+    const int n = obdRequest(req, sizeof(req), resp, sizeof(resp));
+    if (n < 4 || resp[0] != 0x42 || resp[1] != pid) return false;
+    const uint8_t A = resp[3];
+    const uint8_t B = (n > 4) ? resp[4] : 0;
+    value = autotlm::normalizePid(pid, A, B);
+    return true;
+  }
+
   int obdReadDTC(uint16_t* codes, int maxCodes) override {
     const uint8_t req[] = {0x03};
     uint8_t resp[64];
