@@ -222,6 +222,13 @@ Flash note: BLE + WiFi need more than the classic 1.3 MB app partition — the
 AutoTLM One's standard table (1.9 MB OTA slots, boards ≥ 0.3.0) fits it;
 generic ESP32 boards need a big-app scheme (example 08's header says so).
 
+**Compiled in only when `AUTOTLM_ENABLE_BLE`.** To keep lean telemetry
+sketches from linking the ~0.5 MB Bluedroid stack, BLE defaults **on for the
+AutoTLM One** (its OTA partition has room) and **off for a generic ESP32**.
+Force it either way by defining `AUTOTLM_ENABLE_BLE 1` (or `0`) before
+`#include <AutoTLM.h>`. When it's off, `car.bleBegin()` is a no-op returning
+`false` and `car.ble()` isn't declared.
+
 ---
 
 ## `car.config()` — persisted settings + diagnostics (18)

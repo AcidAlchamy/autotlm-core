@@ -17,7 +17,12 @@
  * partition. On the AutoTLM One board this just works (its standard
  * partition table has 1.9 MB OTA slots); on a generic ESP32 select a big-app
  * partition scheme (e.g. "Huge App").
+ *
+ * BLE is compiled in by default only on the AutoTLM One. This define forces
+ * it on for any board (a generic ESP32 build of this example needs it), and
+ * is harmless on the One. It MUST precede the AutoTLM.h include.
  */
+#define AUTOTLM_ENABLE_BLE 1
 #include <AutoTLM.h>
 
 AutoTLM car;

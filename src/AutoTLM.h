@@ -33,8 +33,23 @@
 
 #include <Arduino.h>
 
+// BLE (the change-WiFi service) links the whole Bluedroid stack — ~0.5 MB of
+// flash. It's ON by default only on the AutoTLM One (whose OTA partition has
+// room for it); on a generic ESP32 it's OFF so lean telemetry sketches keep
+// fitting the stock 1.3 MB app partition. Force it either way by defining
+// AUTOTLM_ENABLE_BLE before including this header (example 08 does).
+#ifndef AUTOTLM_ENABLE_BLE
+#  if defined(ARDUINO_AUTOTLM_ONE)
+#    define AUTOTLM_ENABLE_BLE 1
+#  else
+#    define AUTOTLM_ENABLE_BLE 0
+#  endif
+#endif
+
 #include "AutoTLMFrame.h"
+#if AUTOTLM_ENABLE_BLE
 #include "ble/AutoTLMBle.h"
+#endif
 #include "core/AutoTLMConfig.h"
 #include "gnss/AutoTLMGNSS.h"
 #include "hal/AutoTLMHAL.h"
@@ -138,6 +153,10 @@ class AutoTLM {
   }
 
   // -------------------------------------------------------------- BLE
+  // Compiled in only when AUTOTLM_ENABLE_BLE (default: on for the AutoTLM One,
+  // off for a generic ESP32 so lean sketches don't link Bluedroid). Define
+  // AUTOTLM_ENABLE_BLE=1 before including AutoTLM.h to force it on elsewhere.
+#if AUTOTLM_ENABLE_BLE
   /**
    * Bring up the BLE change-WiFi service (GATT service + characteristics;
    * see ble/AutoTLMBle.h for the contract). Does NOT advertise — call
@@ -154,6 +173,11 @@ class AutoTLM {
   }
   /** The BLE module (status state, advertising flag). */
   AutoTLMBle& ble() { return m_ble; }
+#else
+  /** BLE compiled out (define AUTOTLM_ENABLE_BLE=1 to enable). No-op. */
+  bool bleBegin() { return false; }
+  void bleAdvertise(bool) {}
+#endif
 
   /**
    * Offer a re-pair setup AP when a PROVISIONED unit stays offline too long
@@ -260,7 +284,9 @@ class AutoTLM {
   void (*m_wifiCb)(int, int, void*) = nullptr;
   void* m_wifiCbCtx = nullptr;
   int m_lastWifiSt = 0;  // AUTOTLM_WIFI_IDLE
+#if AUTOTLM_ENABLE_BLE
   AutoTLMBle m_ble;
+#endif
   // Offline-reprovision policy (opt-in; see setReprovisionOnLostWifi).
   bool m_reproEnabled = false;
   uint32_t m_reproAfterMs = 120000;

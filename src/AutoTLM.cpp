@@ -138,7 +138,9 @@ void AutoTLM::update() {
   m_obd.tick();  // includes the lazy ECU bring-up
 
   serviceWifiChange();
+#if AUTOTLM_ENABLE_BLE
   m_ble.tick();  // deferred BLE work (scan, pending creds) on the sketch core
+#endif
 
   const uint32_t now = millis();
   if (now - m_lastCompose >= COMPOSE_MS) {
@@ -165,7 +167,9 @@ void AutoTLM::serviceWifiChange() {
 
   // Observers first, BEFORE the terminal state is consumed below.
   if (st != m_lastWifiSt) {
+#if AUTOTLM_ENABLE_BLE
     m_ble.feedWifiChange(st, reason);
+#endif
     if (m_wifiCb) m_wifiCb(st, reason, m_wifiCbCtx);
     m_lastWifiSt = st;
   }
@@ -306,7 +310,9 @@ void AutoTLM::setLogStream(Stream* s) {
   m_log = s;
   m_obd.setLogStream(s);
   m_net.setLogStream(s);
+#if AUTOTLM_ENABLE_BLE
   m_ble.setLogStream(s);
+#endif
 }
 
 // LED legend (same convention the road firmware proved out):
