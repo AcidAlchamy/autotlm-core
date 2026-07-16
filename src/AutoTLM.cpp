@@ -119,6 +119,10 @@ bool AutoTLM::changeWifi(const char* ssid, const char* pass) {
   strncpy(m_pendingPass, pass ? pass : "", sizeof(m_pendingPass) - 1);
   m_pendingPass[sizeof(m_pendingPass) - 1] = 0;
   m_net.tryWifi(ssid, pass);
+  // Tag these creds with the attempt they belong to, so serviceWifiChange()
+  // only persists them if THIS attempt is the one that reaches OK — an
+  // overlapping change can't cause an un-validated SSID to be saved.
+  m_pendingGen = m_net.wifiChangeGen();
   return true;
 }
 
@@ -134,6 +138,9 @@ void AutoTLM::update() {
   m_obd.tick();  // includes the lazy ECU bring-up
 
   serviceWifiChange();
+#if AUTOTLM_ENABLE_BLE
+  m_ble.tick();  // deferred BLE work (scan, pending creds) on the sketch core
+#endif
 
   const uint32_t now = millis();
   if (now - m_lastCompose >= COMPOSE_MS) {
@@ -148,10 +155,32 @@ void AutoTLM::update() {
 // Poll the net task's validate-and-rollback result + run the opt-in
 // offline-reprovision policy. Called every update().
 void AutoTLM::serviceWifiChange() {
-  switch (m_net.wifiChangeState()) {
+  // Snapshot the net-task state ONCE. Everything below acts on this single
+  // read: the net task runs on core 0 and can flip VALIDATING→OK/REVERTED at
+  // any instant, so re-reading between the observer dispatch and the consume
+  // switch would let the switch consume+clear a terminal state the observers
+  // never saw — the BLE STATUS characteristic would stick on "testing"
+  // forever. This snapshot is what actually makes the race-free guarantee
+  // hold (a prior double-read silently broke it).
+  const int st = m_net.wifiChangeState();
+  const int reason = m_net.wifiChangeReason();
+
+  // Observers first, BEFORE the terminal state is consumed below.
+  if (st != m_lastWifiSt) {
+#if AUTOTLM_ENABLE_BLE
+    m_ble.feedWifiChange(st, reason);
+#endif
+    if (m_wifiCb) m_wifiCb(st, reason, m_wifiCbCtx);
+    m_lastWifiSt = st;
+  }
+
+  switch (st) {
     case AUTOTLM_WIFI_OK:
-      // The new network associated: persist it so it survives reboot.
-      if (m_pendingSsid[0]) {
+      // The new network associated: persist it so it survives reboot. Only
+      // persist creds tagged with the attempt that actually validated (the
+      // generation guard) — an overlapping changeWifi() must not cause an
+      // un-validated SSID to be saved, nor a stale revert to drop the winner.
+      if (m_pendingSsid[0] && m_pendingGen == m_net.wifiChangeGen()) {
         m_config.saveWifi(m_pendingSsid, m_pendingPass);
         m_pendingSsid[0] = 0;
         m_pendingPass[0] = 0;
@@ -160,8 +189,10 @@ void AutoTLM::serviceWifiChange() {
       if (m_log) m_log->println("WIFI:change committed (new network saved)");
       break;
     case AUTOTLM_WIFI_REVERTED:
-      m_pendingSsid[0] = 0;
-      m_pendingPass[0] = 0;
+      if (m_pendingGen == m_net.wifiChangeGen()) {
+        m_pendingSsid[0] = 0;
+        m_pendingPass[0] = 0;
+      }
       m_net.clearWifiChange();
       if (m_log) m_log->println("WIFI:change reverted — kept the previous network");
       break;
@@ -174,7 +205,7 @@ void AutoTLM::serviceWifiChange() {
   // safe v1 (no live AP/STA driver contention); the portal comes up WPA2 so
   // it isn't a hijackable open network even if a long tunnel trips it.
   if (m_reproEnabled && !m_prov.active() && m_config.hasWifi() &&
-      m_net.wifiChangeState() == AUTOTLM_WIFI_IDLE &&
+      st == AUTOTLM_WIFI_IDLE &&
       m_net.sinceConnectedMs() > m_reproAfterMs) {
     if (m_log) m_log->println("WIFI:offline too long — rebooting into re-pair portal");
     m_config.putInt("reprovision", 1);
@@ -279,6 +310,9 @@ void AutoTLM::setLogStream(Stream* s) {
   m_log = s;
   m_obd.setLogStream(s);
   m_net.setLogStream(s);
+#if AUTOTLM_ENABLE_BLE
+  m_ble.setLogStream(s);
+#endif
 }
 
 // LED legend (same convention the road firmware proved out):

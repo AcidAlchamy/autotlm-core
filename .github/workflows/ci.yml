@@ -36,7 +36,14 @@ jobs:
         run: |
           set -e
           for ex in examples/*/; do
-            echo "::group::$ex (${{ matrix.fqbn }})"
-            arduino-cli compile --fqbn "${{ matrix.fqbn }}" --library . "$ex"
+            fqbn="${{ matrix.fqbn }}"
+            # BLE + WiFi don't fit the generic board's classic 1.3 MB app
+            # partition; the AutoTLM One's standard table (1.9 MB OTA slots)
+            # takes it as-is. Generic gets the big-app scheme for this one.
+            if [ "$ex" = "examples/08_BleChangeWifi/" ] && [ "$fqbn" = "esp32:esp32:esp32" ]; then
+              fqbn="esp32:esp32:esp32:PartitionScheme=huge_app"
+            fi
+            echo "::group::$ex ($fqbn)"
+            arduino-cli compile --fqbn "$fqbn" --library . "$ex"
             echo "::endgroup::"
           done

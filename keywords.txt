@@ -36,6 +36,13 @@ buffered	KEYWORD2
 provision	KEYWORD2
 beginPortal	KEYWORD2
 provisioning	KEYWORD2
+bleBegin	KEYWORD2
+bleAdvertise	KEYWORD2
+ble	KEYWORD2
+onWifiChange	KEYWORD2
+wifiChangeReason	KEYWORD2
+advertise	KEYWORD2
+advertising	KEYWORD2
 advertisedCount	KEYWORD2
 advertisedAt	KEYWORD2
 freezeCode	KEYWORD2

@@ -33,7 +33,23 @@
 
 #include <Arduino.h>
 
+// BLE (the change-WiFi service) links the whole Bluedroid stack — ~0.5 MB of
+// flash. It's ON by default only on the AutoTLM One (whose OTA partition has
+// room for it); on a generic ESP32 it's OFF so lean telemetry sketches keep
+// fitting the stock 1.3 MB app partition. Force it either way by defining
+// AUTOTLM_ENABLE_BLE before including this header (example 08 does).
+#ifndef AUTOTLM_ENABLE_BLE
+#  if defined(ARDUINO_AUTOTLM_ONE)
+#    define AUTOTLM_ENABLE_BLE 1
+#  else
+#    define AUTOTLM_ENABLE_BLE 0
+#  endif
+#endif
+
 #include "AutoTLMFrame.h"
+#if AUTOTLM_ENABLE_BLE
+#include "ble/AutoTLMBle.h"
+#endif
 #include "core/AutoTLMConfig.h"
 #include "gnss/AutoTLMGNSS.h"
 #include "hal/AutoTLMHAL.h"
@@ -120,6 +136,48 @@ class AutoTLM {
   bool changeWifi(const char* ssid, const char* pass);
   /** Live WiFi-change state: AUTOTLM_WIFI_IDLE/VALIDATING/OK/REVERTED. */
   int wifiChangeState() { return m_net.wifiChangeState(); }
+  /** Why the last change REVERTED: AUTOTLM_WIFI_REASON_NOT_FOUND/AUTH/TIMEOUT (0 otherwise). */
+  int wifiChangeReason() { return m_net.wifiChangeReason(); }
+
+  /**
+   * Observe WiFi-change transitions RACE-FREE. Fired from inside update()
+   * on every state transition — including OK/REVERTED *before* the facade
+   * consumes them — so a consumer can never miss the terminal outcome the
+   * way polling wifiChangeState() can. This is the hook the BLE status
+   * characteristic (and USB Live's wifi_change event) feed from.
+   * @param cb (state = AUTOTLM_WIFI_*, reason = AUTOTLM_WIFI_REASON_*, ctx)
+   */
+  void onWifiChange(void (*cb)(int state, int reason, void* ctx), void* ctx = nullptr) {
+    m_wifiCb = cb;
+    m_wifiCbCtx = ctx;
+  }
+
+  // -------------------------------------------------------------- BLE
+  // Compiled in only when AUTOTLM_ENABLE_BLE (default: on for the AutoTLM One,
+  // off for a generic ESP32 so lean sketches don't link Bluedroid). Define
+  // AUTOTLM_ENABLE_BLE=1 before including AutoTLM.h to force it on elsewhere.
+#if AUTOTLM_ENABLE_BLE
+  /**
+   * Bring up the BLE change-WiFi service (GATT service + characteristics;
+   * see ble/AutoTLMBle.h for the contract). Does NOT advertise — call
+   * bleAdvertise(true) per your own policy (recommended: advertise while
+   * unprovisioned, briefly after power-on, on a SETUP press, and whenever
+   * station WiFi is lost; go dark while associated and pushing, so a driving
+   * car is never a followable beacon). @return true if the service is up
+   */
+  bool bleBegin() { return m_ble.begin(*this, m_frame.deviceId); }
+  /** Start/stop BLE advertising (implies bleBegin() on first use). */
+  void bleAdvertise(bool on) {
+    if (on && !m_ble.active()) bleBegin();
+    m_ble.advertise(on);
+  }
+  /** The BLE module (status state, advertising flag). */
+  AutoTLMBle& ble() { return m_ble; }
+#else
+  /** BLE compiled out (define AUTOTLM_ENABLE_BLE=1 to enable). No-op. */
+  bool bleBegin() { return false; }
+  void bleAdvertise(bool) {}
+#endif
 
   /**
    * Offer a re-pair setup AP when a PROVISIONED unit stays offline too long
@@ -221,6 +279,14 @@ class AutoTLM {
   // task reports the new network validated.
   char m_pendingSsid[33] = "";
   char m_pendingPass[65] = "";
+  uint32_t m_pendingGen = 0;  // net attempt id these creds belong to
+  // Race-free change observation (onWifiChange) + the BLE service it feeds.
+  void (*m_wifiCb)(int, int, void*) = nullptr;
+  void* m_wifiCbCtx = nullptr;
+  int m_lastWifiSt = 0;  // AUTOTLM_WIFI_IDLE
+#if AUTOTLM_ENABLE_BLE
+  AutoTLMBle m_ble;
+#endif
   // Offline-reprovision policy (opt-in; see setReprovisionOnLostWifi).
   bool m_reproEnabled = false;
   uint32_t m_reproAfterMs = 120000;

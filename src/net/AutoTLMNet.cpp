@@ -56,6 +56,18 @@ void AutoTLMNet::wifi(const char* ssid, const char* pass) {
 void AutoTLMNet::tryWifi(const char* ssid, const char* pass) {
   if (!ssid || !ssid[0]) return;
   ensureMutex();
+  // Capture WHY a validation attempt fails (the AP tells us on disconnect) so
+  // a revert can say "wrong password" vs "network not found" vs plain timeout.
+  if (!m_discEvtRegistered) {
+    m_discEvtRegistered = true;
+    WiFi.onEvent(
+        [this](WiFiEvent_t, WiFiEventInfo_t info) {
+          m_discReason = (uint8_t)info.wifi_sta_disconnected.reason;
+        },
+        ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  }
+  m_discReason = 0;
+  m_changeReason = AUTOTLM_WIFI_REASON_NONE;
   lockCfg();
   strncpy(m_stagedSsid, ssid, sizeof(m_stagedSsid) - 1);
   m_stagedSsid[sizeof(m_stagedSsid) - 1] = 0;
@@ -63,6 +75,7 @@ void AutoTLMNet::tryWifi(const char* ssid, const char* pass) {
   m_stagedPass[sizeof(m_stagedPass) - 1] = 0;
   m_validateReq = true;
   m_wifiWanted = true;  // keep the connection managed after this settles
+  m_changeGen++;        // a new attempt: its terminal state carries this id
   unlockCfg();
   m_wifiChange = AUTOTLM_WIFI_VALIDATING;
   if (m_log) m_log->printf("WIFI:validating \"%s\" (keeping current on failure)\n", ssid);
@@ -228,6 +241,22 @@ void AutoTLMNet::taskLoop() {
         if (m_log) m_log->printf("WIFI:validated \"%s\" — now the saved network\n", staged);
       } else if (now - m_validateStart > WIFI_VALIDATE_MS) {
         // Staged creds never associated: fall back to the known-good network.
+        // Classify the failure from the AP's last disconnect reason — a silent
+        // AP stays TIMEOUT (never claim "wrong password" without evidence).
+        switch (m_discReason) {
+          case WIFI_REASON_NO_AP_FOUND:
+            m_changeReason = AUTOTLM_WIFI_REASON_NOT_FOUND;
+            break;
+          case WIFI_REASON_AUTH_FAIL:
+          case WIFI_REASON_AUTH_EXPIRE:
+          case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+          case WIFI_REASON_HANDSHAKE_TIMEOUT:
+            m_changeReason = AUTOTLM_WIFI_REASON_AUTH;
+            break;
+          default:
+            m_changeReason = AUTOTLM_WIFI_REASON_TIMEOUT;
+            break;
+        }
         m_validating = false;
         m_wifiChange = AUTOTLM_WIFI_REVERTED;
         WiFi.disconnect();
@@ -253,7 +282,11 @@ void AutoTLMNet::taskLoop() {
         lastPush = now;
         bufferLiveFrame();
       }
-      if (now - lastWifiTry > WIFI_RETRY_MS) {
+      // Don't fire the reconnect while a BLE scan owns the radio — an
+      // all-channel scan and a WiFi.begin() collide (the scan aborts, the app
+      // gets "[]"), and provisioning happens precisely when WiFi is down and
+      // this loop is hot. The BLE service raises m_radioBusy around a scan.
+      if (!m_radioBusy && now - lastWifiTry > WIFI_RETRY_MS) {
         lastWifiTry = now;
         m_wifiDrops = m_wifiDrops + 1;
         WiFi.disconnect();
@@ -493,6 +526,7 @@ void AutoTLMNet::pushFrame() {
 void AutoTLMNet::wifi(const char*, const char*) {}
 void AutoTLMNet::tryWifi(const char*, const char*) {}
 uint32_t AutoTLMNet::sinceConnectedMs() const { return 0; }
+// (wifiChangeReason() is inline in the header; m_changeReason stays 0 here.)
 void AutoTLMNet::cloud(const char*, const char*, uint32_t) {}
 void AutoTLMNet::attach(AutoTLMFrameProvider provider, AutoTLMDiagSaver diagSaver, void* ctx) {
   m_ctx = ctx;
