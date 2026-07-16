@@ -3,6 +3,22 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
+## 2026-07-16 — v0.7.0: change your WiFi from your phone
+
+- **The headline: no button, no cable, no laptop.** Your phone finds the unit
+  over Bluetooth, you prove it's yours with the code on its label, pick a
+  network from the unit's own scan, type the password — and watch it honestly
+  report *testing… → connected* or *couldn't connect — kept your old network*
+  (with the reason). The safety net underneath is the same validate-and-
+  rollback engine: a wrong password can never strand the unit.
+- **Private by design.** The Bluetooth link is encrypted and bonded, the
+  credentials write requires physical possession of the unit's setup code,
+  and the unit is only discoverable when a change is plausibly wanted — a
+  driving car is never a followable beacon.
+- For builders: `car.bleBegin()` / `car.bleAdvertise(on)`, a race-free
+  `car.onWifiChange()` observer, and revert reasons
+  (`car.wifiChangeReason()`) — full GATT contract in docs/API.md.
+
 ## 2026-07-15 — v0.6.0: every sensor your car offers, freeze frames, and drives that keep their timeline
 
 - **The whole sensor menu.** Frames now tell every dashboard exactly which

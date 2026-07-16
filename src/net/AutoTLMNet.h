@@ -56,6 +56,14 @@ enum AutoTLMWifiChange {
   AUTOTLM_WIFI_REVERTED,    ///< new credentials failed; reverted to the old ones
 };
 
+/** Why a tryWifi() attempt REVERTED (wifiChangeReason(); 0 unless reverted). */
+enum AutoTLMWifiRevertReason {
+  AUTOTLM_WIFI_REASON_NONE = 0,
+  AUTOTLM_WIFI_REASON_NOT_FOUND = 1,  ///< SSID not seen (AP reported no-AP-found)
+  AUTOTLM_WIFI_REASON_AUTH = 2,       ///< association rejected (wrong password)
+  AUTOTLM_WIFI_REASON_TIMEOUT = 3,    ///< never associated / AP silent — render as "couldn't connect", not "wrong password"
+};
+
 // Config buffer sizes. The token is sized for real-world bearer tokens
 // (JWTs routinely exceed 200 chars).
 #define AUTOTLM_NET_SSID_LEN 33
@@ -123,6 +131,12 @@ class AutoTLMNet {
   void tryWifi(const char* ssid, const char* pass);
   /** Current validate-and-rollback state (AUTOTLM_WIFI_*). */
   int wifiChangeState() const { return m_wifiChange; }
+  /** Why the last attempt REVERTED (AUTOTLM_WIFI_REASON_*; 0 otherwise). */
+  int wifiChangeReason() const { return m_changeReason; }
+  /** Monotonic id of the tryWifi() attempt a terminal state belongs to. */
+  uint32_t wifiChangeGen() const { return m_changeGen; }
+  /** True while a tryWifi() attempt is validating (creds can't be re-staged safely). */
+  bool wifiChangeBusy() const { return m_wifiChange == AUTOTLM_WIFI_VALIDATING; }
   /** Acknowledge an OK/REVERTED result, returning to IDLE. */
   void clearWifiChange() { m_wifiChange = AUTOTLM_WIFI_IDLE; }
   /**
@@ -131,6 +145,13 @@ class AutoTLMNet {
    * mid-drive" from "this network is really gone".
    */
   uint32_t sinceConnectedMs() const;
+
+  /**
+   * Tell the net task another owner (the BLE service) is using the WiFi radio
+   * for a scan, so its offline-reconnect loop pauses instead of aborting the
+   * scan. Raised around WiFi.scanNetworks(); cleared when the scan completes.
+   */
+  void setRadioBusy(bool busy) { m_radioBusy = busy; }
 
   // ------------------------------------------------------------- status
   bool wifiConnected() const;
@@ -186,6 +207,11 @@ class AutoTLMNet {
   char m_stagedPass[AUTOTLM_NET_PASS_LEN] = "";
   bool m_validateReq = false;
   volatile int m_wifiChange = AUTOTLM_WIFI_IDLE;   ///< AUTOTLM_WIFI_*
+  volatile int m_changeReason = 0;                 ///< AUTOTLM_WIFI_REASON_* (set with REVERTED)
+  volatile uint32_t m_changeGen = 0;               ///< bumped per tryWifi(); tags the terminal state
+  volatile bool m_radioBusy = false;               ///< a BLE scan owns the radio; pause reconnect
+  volatile uint8_t m_discReason = 0;               ///< last WiFi disconnect reason during validation
+  bool m_discEvtRegistered = false;
   volatile uint32_t m_lastAssocMs = 0;             ///< millis() of last association
 
   AutoTLMFrameProvider m_provider = nullptr;

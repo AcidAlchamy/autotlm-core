@@ -1,7 +1,7 @@
 # AutoTLM Core — API reference
 
-Complete public API of AutoTLM Core v0.6.0: **~150 public functions across
-the facade, 7 modules, the HAL interface and 3 helpers.** This file is the
+Complete public API of AutoTLM Core v0.7.0: **~160 public functions across
+the facade, 8 modules, the HAL interface and 3 helpers.** This file is the
 source of truth for the website/wiki — field names, units and defaults here
 match the code exactly.
 
@@ -25,6 +25,11 @@ the status LED. Beginner API lives here; power users reach through
 | `bool beginPortal(apName = nullptr, apPass = nullptr)` | Force the setup portal up now (the "reconfigure me" path — wire to a button hold). Default AP name `AutoTLM-XXXX`, secured WPA2 with the per-device password. |
 | `bool changeWifi(ssid, pass)` | Change WiFi SAFELY — validate-and-rollback. Tries the new network while keeping the current one; reverts if it can't associate in ~30 s (a wrong password never strands the unit). Non-blocking; persists the new creds on success. Poll `wifiChangeState()`. |
 | `int wifiChangeState()` | Live WiFi-change state: `AUTOTLM_WIFI_IDLE`/`VALIDATING`/`OK`/`REVERTED`. |
+| `int wifiChangeReason()` | Why the last change REVERTED: 1 = SSID not found, 2 = auth failed, 3 = timeout/other (render 3 as "couldn't connect", never "wrong password"). 0 otherwise. |
+| `void onWifiChange(cb, ctx)` | RACE-FREE change observation: `cb(state, reason, ctx)` fires from inside `update()` on every transition, including `OK`/`REVERTED` *before* the facade consumes them — a poll of `wifiChangeState()` can miss a terminal state; this can't. |
+| `bool bleBegin()` | Bring up the BLE change-WiFi service (contract below). Does NOT advertise. |
+| `void bleAdvertise(on)` | Start/stop BLE advertising — WHEN to be discoverable is YOUR policy (recommended: unprovisioned / post-power-on window / SETUP press / WiFi lost; dark while streaming, so a driving car is never a followable beacon). Implies `bleBegin()`. |
+| `AutoTLMBle& ble()` | The BLE module (state, advertising flag). |
 | `void setReprovisionOnLostWifi(on, afterMs = 120000)` | Provisioned unit offline for `afterMs` → re-raise the (WPA2) setup AP so a phone can re-pair it, no button/cable. Opt-in; conservative (a brief dead zone won't trigger it). |
 | `AutoTLMProvision& provisioning()` | The provisioning module (below). |
 | `void wifi(ssid, pass)` | Connect to WiFi (non-blocking; a core-0 task reconnects forever). Credentials persist to flash; pass `nullptr` to reuse saved ones. |
@@ -167,6 +172,58 @@ normal operation. Normally driven entirely by `car.provision()`.
 
 ---
 
+## `car.ble()` — the BLE change-WiFi service (6)
+
+The owner-priority "change WiFi from the phone" feature. GATT service
+`a0817000-7a1c-4c9a-9d10-000000000001`; the unit advertises the service UUID
+with **service data = the exact 8-char `device.id`** (match it against the
+owned ids from Cloud's `/api/auth/me`; the id is an identifier, not a
+credential) and local name `AutoTLM-XXXX` (humans only — don't match on it).
+
+Security: **LE Secure Connections, Just Works, bonded** (the unit has no
+display; iOS shows its system pairing prompt once). Just Works has no MITM
+protection, so encryption alone is **not** treated as "the owner" —
+**possession proof gates every privileged operation.** The phone first
+unlocks the session with the unit's 8-char setup code (the label /
+WPA2-portal password): `{"op":"auth","code":"XXXXXXXX"}`. Only then are scans
+honored and results populated, and only then is a creds write acted on. The
+check happens inside the library (`config().apPassword()`); firmware never
+handles the code, the code is never stored server-side (Cloud's ruling — a
+phone may cache it locally), and auth is **per-connection** (cleared on
+disconnect).
+
+| Characteristic (`…0002`–`…0005`) | Access | Payload |
+|---|---|---|
+| CTRL `…0002` | write (encrypted) | `{"op":"auth","code":"XXXXXXXX"}` unlocks the session; `{"op":"scan"}` then starts an async SSID scan (refused until authed) |
+| SCAN `…0003` | read/notify (enc) | `{"seq":N,"nets":[{"ssid":"…","rssi":-52,"sec":true},…]}` — top 10 by RSSI, deduped, ≤512 B. **Notify is a freshness signal only** (Bluedroid truncates notifications to MTU−3); the app must **read** the characteristic (long read) for the full list, and use `seq` to detect a refresh that landed mid-read. Empty/`"[]"` until the session is authed. |
+| CREDS `…0004` | write (encrypted) | `{"code":"XXXXXXXX","ssid":"…","pass":"…"}` |
+| STATUS `…0005` | read/notify (enc) | 2 bytes `[state, detail]` — see below |
+
+STATUS states: `0` idle · `1` creds_received · `2` testing · `3` connected
+(new network persisted — done) · `4` reverted · `5` busy (a change was
+already validating — retry after it settles). `detail` is nonzero only for
+state 4: `1` SSID not found · `2` auth failed (wrong password) · `3`
+timeout/other (render as "couldn't connect", never "wrong password") · `4`
+rejected (bad/absent setup code) · `5` no SSID in the creds write. A terminal
+state **holds until the next CREDS write _or_ any other WiFi change** (a
+USB/sketch `changeWifi()` also drives STATUS, so the app always reflects
+reality). The characteristic feeds off `onWifiChange()` from a single
+coherent state snapshot, so it is race-free by construction.
+
+| Function | What it does |
+|---|---|
+| `bool begin(car, deviceId)` | Facade-wired via `car.bleBegin()` — service up, advertising off. |
+| `void advertise(on)` / `bool advertising()` | Discoverability switch + its state (policy is the firmware's). |
+| `bool active()` | Service initialized? |
+| `int state()` | Current STATUS state byte. |
+| `void tick()` / `feedWifiChange(...)` | Pumped/fed by the facade — you don't call these. |
+
+Flash note: BLE + WiFi need more than the classic 1.3 MB app partition — the
+AutoTLM One's standard table (1.9 MB OTA slots, boards ≥ 0.3.0) fits it;
+generic ESP32 boards need a big-app scheme (example 08's header says so).
+
+---
+
 ## `car.config()` — persisted settings + diagnostics (18)
 
 NVS-backed; every method is a safe no-op on platforms without NVS.
@@ -303,8 +360,9 @@ Plus the full set of `PID_*` constants (mode-01 names → hex) in
 
 | Area | Public functions |
 |---|---|
-| `AutoTLM` facade | 28 |
+| `AutoTLM` facade | 35 |
 | OBD | 35 |
+| BLE | 6 |
 | GNSS | 6 |
 | IMU | 5 |
 | Net | 19 |
@@ -313,4 +371,4 @@ Plus the full set of `PID_*` constants (mode-01 names → hex) in
 | Frame | 2 (+40 documented fields) |
 | HAL interface | 26 virtuals |
 | Helpers | 3 |
-| **Total** | **≈150** |
+| **Total** | **≈160** |
