@@ -3,7 +3,7 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
-## 2026-07-16 — v0.7.1 + boards 0.4.0: first-hardware fixes
+## 2026-07-17 — v0.7.1 + boards 0.4.0: first-hardware fixes
 
 - **Important board update.** The AutoTLM One board package 0.3.0 could leave a
   unit unable to start after uploading — its flash layout didn't line up with
