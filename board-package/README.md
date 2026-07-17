@@ -80,12 +80,20 @@ every arduino-cli/IDE upload write the sketch into whatever partition sits at
 
 **Boards 0.3.0 shipped exactly that bug** (NVS widened to 0x14000 pushed
 `app0` to 0x20000) and bricked the bench One on its first flash; it was
-recalled and pulled from the index in favour of 0.4.0. Compile-only CI cannot
-catch this — it only appears on a real upload. **Grow the app slots, never the
-head of the table**, and validate any change with:
+recalled and pulled from the index in favour of 0.4.0. **Grow the app slots,
+never the head of the table.**
+
+Compiling proves nothing about this — 0.3.0 compiled perfectly. So CI runs
+`verify-partitions.py`, which stands in for the flash: it asserts the two
+immovable offsets, that both OTA slots exist and match, and that nothing
+overlaps or runs past 4 MB. Run it yourself after any table change:
+
+```
+python3 board-package/verify-partitions.py
+```
+
+For a deeper check, the core's own parser also round-trips the table:
 
 ```
 python <esp32-core>/tools/gen_esp32part.py --verify autotlm/esp32/tools/partitions/autotlm_ota.csv out.bin
 ```
-
-then confirm `otadata` still reports `0xe000` and `app0` `0x10000`.
