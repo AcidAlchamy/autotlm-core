@@ -163,7 +163,14 @@ class AutoTLM {
    * bleAdvertise(true) per your own policy (recommended: advertise while
    * unprovisioned, briefly after power-on, on a SETUP press, and whenever
    * station WiFi is lost; go dark while associated and pushing, so a driving
-   * car is never a followable beacon). @return true if the service is up
+   * car is never a followable beacon).
+   *
+   * CALL IT EARLY: right after begin(), BEFORE provision(). The BT stack
+   * needs a large contiguous allocation, and the captive portal (SoftAP +
+   * DNS + web server) fragments the heap enough to starve it on a real
+   * firmware. Called too late it returns false (with a log) rather than
+   * bringing the unit down.
+   * @return true if the service is up
    */
   bool bleBegin() { return m_ble.begin(*this, m_frame.deviceId); }
   /** Start/stop BLE advertising (implies bleBegin() on first use). */

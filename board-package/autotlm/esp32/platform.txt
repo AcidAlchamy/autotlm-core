@@ -2,4 +2,4 @@
 # (see boards.txt: one.build.core=esp32:esp32) — this file only names the
 # platform for the IDE.
 name=AutoTLM Boards
-version=0.3.0
+version=0.4.0

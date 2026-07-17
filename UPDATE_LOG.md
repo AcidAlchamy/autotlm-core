@@ -3,6 +3,19 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
+## 2026-07-17 — v0.7.1 + boards 0.4.0: first-hardware fixes
+
+- **Important board update.** The AutoTLM One board package 0.3.0 could leave a
+  unit unable to start after uploading — its flash layout didn't line up with
+  where the Arduino tools actually write. **Boards 0.4.0 fixes it and 0.3.0 has
+  been withdrawn**; update the board package before your next upload (Tools →
+  Boards Manager → AutoTLM Boards → 0.4.0). The two big update slots are
+  unchanged, so nothing else about your unit changes.
+- **Bluetooth setup is steadier.** Starting the BLE service when memory was
+  already tight could stop a unit rather than simply reporting the problem — it
+  now declines gracefully and says why. Bring Bluetooth up early in your sketch
+  (right after `car.begin()`); the example and docs show the order.
+
 ## 2026-07-16 — v0.7.0: change your WiFi from your phone
 
 - **The headline: no button, no cable, no laptop.** Your phone finds the unit

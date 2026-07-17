@@ -62,9 +62,38 @@ esp32 core version on the release machine.
 
 **Exception:** `autotlm/esp32/tools/partitions/autotlm_ota.csv` IS in git —
 it's ours, not Espressif's. It is the **locked AutoTLM One partition table**
-(owner ruling 2026-07-14): 4 MB flash as two 1.9 MB OTA app slots + 80 KB NVS
-+ coredump, decided once so every unit flashed from boards 0.3.0 onward can
+(owner ruling 2026-07-14): 4 MB flash as two 1.875 MB OTA app slots + NVS +
+coredump, decided once so every unit flashed from boards 0.4.0 onward can
 receive BLE and OTA features later without a destructive field re-partition.
 It is the default `PartitionScheme`; the stock esp32 schemes remain in the
 menu for bench experiments only. Both copy scripts merge the esp32 core's
 partition files *around* it.
+
+### 🔒 Hard constraint: `otadata` @ 0xE000 and `app0` @ 0x10000
+
+Never move those two. The esp32 core hardcodes them as **literals** in its
+`upload`, `merge-bin` and `program` recipes (platform.txt: `… 0xe000
+boot_app0.bin 0x10000 firmware.bin`), so a table that relocates them makes
+every arduino-cli/IDE upload write the sketch into whatever partition sits at
+0x10000 — the bootloader then finds no bootable slot and the unit boot-loops
+(`ota data partition invalid… No bootable app partitions`).
+
+**Boards 0.3.0 shipped exactly that bug** (NVS widened to 0x14000 pushed
+`app0` to 0x20000) and bricked the bench One on its first flash; it was
+recalled and pulled from the index in favour of 0.4.0. **Grow the app slots,
+never the head of the table.**
+
+Compiling proves nothing about this — 0.3.0 compiled perfectly. So CI runs
+`verify-partitions.py`, which stands in for the flash: it asserts the two
+immovable offsets, that both OTA slots exist and match, and that nothing
+overlaps or runs past 4 MB. Run it yourself after any table change:
+
+```
+python3 board-package/verify-partitions.py
+```
+
+For a deeper check, the core's own parser also round-trips the table:
+
+```
+python <esp32-core>/tools/gen_esp32part.py --verify autotlm/esp32/tools/partitions/autotlm_ota.csv out.bin
+```

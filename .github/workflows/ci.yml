@@ -6,6 +6,17 @@ on:
   pull_request:
 
 jobs:
+  # The AutoTLM One's partition table can brick uploads if `otadata`/`app0`
+  # drift off the offsets the esp32 core hardcodes — and compiling proves
+  # nothing about it (boards 0.3.0 compiled fine and boot-looped the bench
+  # unit on its first flash). This check stands in for the flash.
+  partitions:
+    name: partition table offsets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 board-package/verify-partitions.py
+
   examples:
     name: examples (${{ matrix.fqbn }})
     runs-on: ubuntu-latest
