@@ -210,9 +210,15 @@ USB/sketch `changeWifi()` also drives STATUS, so the app always reflects
 reality). The characteristic feeds off `onWifiChange()` from a single
 coherent state snapshot, so it is race-free by construction.
 
+**Call `car.bleBegin()` early — right after `car.begin()`, BEFORE
+`car.provision()`.** The BT stack needs a large contiguous allocation, and the
+captive portal (SoftAP + DNS + web server) fragments the heap enough to starve
+it on a real firmware. Called too late, `bleBegin()` returns `false` with a log
+rather than bringing the unit down. Example 08 shows the canonical order.
+
 | Function | What it does |
 |---|---|
-| `bool begin(car, deviceId)` | Facade-wired via `car.bleBegin()` — service up, advertising off. |
+| `bool begin(car, deviceId)` | Facade-wired via `car.bleBegin()` — service up, advertising off. Returns `false` (never aborts) if there isn't enough heap; see the ordering note above. |
 | `void advertise(on)` / `bool advertising()` | Discoverability switch + its state (policy is the firmware's). |
 | `bool active()` | Service initialized? |
 | `int state()` | Current STATUS state byte. |

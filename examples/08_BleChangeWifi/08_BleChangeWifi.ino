@@ -34,10 +34,16 @@ const uint32_t ADVERTISE_AFTER_BOOT_MS = 120000;
 void setup() {
   Serial.begin(115200);
   car.begin();
-  car.provision();  // saved settings apply; fresh unit raises the portal
 
+  // Bring BLE up FIRST — right after begin(), before provision(). The BT
+  // stack needs a big contiguous allocation, and the captive portal (SoftAP +
+  // DNS + web server) fragments the heap enough to starve it on a real
+  // firmware. This ordering is the canonical one; get it wrong and bleBegin()
+  // returns false (it won't take the unit down, but you won't have BLE).
   car.bleBegin();
   car.bleAdvertise(true);  // power-on window (policy below turns it off)
+
+  car.provision();  // saved settings apply; fresh unit raises the portal
 
   // Optional: watch outcomes race-free (the BLE status characteristic uses
   // this same hook internally).

@@ -12,8 +12,22 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
+
+#include <new>
 
 #include "../AutoTLM.h"
+
+// Bringing up Bluedroid + the GATT table needs a big chunk of contiguous heap.
+// Arduino-ESP32 builds without exceptions, so an allocation failure inside the
+// BLE library doesn't return an error — it throws std::bad_alloc straight into
+// std::terminate and takes the whole firmware down (ONE hit exactly this when
+// bleBegin() ran with the captive portal's SoftAP + DNS + webserver already
+// up). We can't catch it, so we refuse politely BEFORE touching the stack.
+// Bluedroid's own init is the expensive part; ~48 KB free with a ~20 KB
+// largest block is the empirical floor for a healthy bring-up.
+#define BLE_MIN_FREE_HEAP 49152
+#define BLE_MIN_BLOCK 20480
 
 // Minimum gap between honored scans — throttles an authed-but-hostile peer
 // from spamming all-channel scans (each disrupts the associated link).
@@ -117,6 +131,23 @@ bool AutoTLMBle::begin(AutoTLM& car, const char* deviceId) {
   if (m_impl) return true;
   m_car = &car;
 
+  // Refuse rather than abort: begin() returns bool, so a firmware that brings
+  // BLE up late (portal already running) gets `false` and can carry on
+  // instead of dying in std::terminate. Canonical fix is ordering — call
+  // car.bleBegin() right after car.begin(), BEFORE provision() — but a
+  // library must not take the whole unit down when it's called differently.
+  const size_t freeHeap = ESP.getFreeHeap();
+  const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  if (freeHeap < BLE_MIN_FREE_HEAP || largest < BLE_MIN_BLOCK) {
+    if (m_log)
+      m_log->printf(
+          "BLE:not enough heap to start (%u free, %u largest block; need %u/%u). "
+          "Call car.bleBegin() right after car.begin(), before provision().\n",
+          (unsigned)freeHeap, (unsigned)largest, (unsigned)BLE_MIN_FREE_HEAP,
+          (unsigned)BLE_MIN_BLOCK);
+    return false;
+  }
+
   const char* id = deviceId ? deviceId : "";
   char name[24];
   snprintf(name, sizeof(name), "AutoTLM-%s", (strlen(id) >= 4) ? id + strlen(id) - 4 : "0000");
@@ -129,11 +160,21 @@ bool AutoTLMBle::begin(AutoTLM& car, const char* deviceId) {
   BLESecurity::setCapability(ESP_IO_CAP_NONE);
   BLESecurity::setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
 
-  m_impl = new AutoTLMBleImpl();
+  m_impl = new (std::nothrow) AutoTLMBleImpl();
+  if (!m_impl) {
+    if (m_log) m_log->println("BLE:alloc failed — service not started");
+    return false;
+  }
   m_impl->server = BLEDevice::createServer();
-  m_impl->serverCb = new AutoTLMBleImpl::ServerCb(this);
-  m_impl->server->setCallbacks(m_impl->serverCb);
-  BLEService* svc = m_impl->server->createService(AUTOTLM_BLE_SERVICE_UUID);
+  BLEService* svc = m_impl->server ? m_impl->server->createService(AUTOTLM_BLE_SERVICE_UUID) : nullptr;
+  if (!svc) {
+    if (m_log) m_log->println("BLE:GATT service alloc failed — service not started");
+    delete m_impl;
+    m_impl = nullptr;
+    return false;
+  }
+  m_impl->serverCb = new (std::nothrow) AutoTLMBleImpl::ServerCb(this);
+  if (m_impl->serverCb) m_impl->server->setCallbacks(m_impl->serverCb);
 
   const uint32_t encRW = ESP_GATT_PERM_READ_ENCRYPTED | ESP_GATT_PERM_WRITE_ENCRYPTED;
 
