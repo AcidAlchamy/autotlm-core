@@ -160,3 +160,79 @@ size_t AutoTLMFrame::toJson(char* buf, size_t cap) const {
 
   return len;
 }
+
+size_t AutoTLMFrame::toJsonLive(char* buf, size_t cap) const {
+  // 96 is the floor for a complete `{device}` object even with the longest
+  // (19-char) id; below it we can't guarantee valid JSON, so return nothing.
+  if (!buf || cap < 96) { if (buf && cap) buf[0] = 0; return 0; }
+  size_t len = 0;
+
+  // A compact frame for the LOCAL BLE telemetry stream: the same field names
+  // as toJson (the app reuses its parser) but trimmed to fit ONE BLE notify at
+  // the NEGOTIATED MTU (the caller passes MTU-3 as `cap`). Dropped vs the full
+  // frame: the bulky `obd.supported` and `dtc.freeze`. Priority under a tight
+  // budget: gauges > dtc + gps > extra PIDs — so gps (map data, and the reason
+  // this stream is auth-gated) is NEVER the silent sacrifice; PIDs yield first.
+  // Every section is room-guarded, so the result is ALWAYS valid JSON <= cap.
+
+  jcat(buf, cap, len, "{\"source\":\"device\",\"live\":true,\"device\":{\"id\":\"");
+  jstr(buf, cap, len, deviceId);
+  jcat(buf, cap, len, "\",\"modules\":%d},", (int)moduleCount);
+
+  // Reserve the ACTUAL tail (dtc + gps + closer) so the PID fill can't crowd
+  // them out. dtc: "dtc":{"mil":false,"codes":[<comma-list>]}, ~ strlen+30.
+  // gps: the fixed block ~ 110. closer + slack: 8.
+  size_t reserve = 8;
+  if (mil || dtc[0]) reserve += strlen(dtc) + 30;
+  if (fix) reserve += 110;
+
+  if (obdConnected && len + 130 < cap) {
+    jcat(buf, cap, len,
+         "\"obd\":{\"connected\":true,\"speed_kph\":%d,\"rpm\":%d,\"coolant_c\":%d,"
+         "\"load_pct\":%d,\"throttle_pct\":%d,\"volts\":%.1f,\"pids\":{",
+         speedKph, rpm, coolantC, loadPct, throttlePct, volts);
+    bool first = true;
+    for (int p = 0; p < 256; p++) {
+      if (!pidHave[p]) continue;
+      if (len + reserve + 16 >= cap) break;  // never eat the dtc/gps tail room
+      const uint8_t d = autotlm::pidDecimals((uint8_t)p);
+      if (d == 0) {
+        jcat(buf, cap, len, "%s\"%02X\":%d", first ? "" : ",", p, pidVal[p]);
+      } else {
+        int div = 1;
+        for (uint8_t k = 0; k < d; k++) div *= 10;
+        jcat(buf, cap, len, "%s\"%02X\":%.*f", first ? "" : ",", p, (int)d,
+             (double)pidVal[p] / div);
+      }
+      first = false;
+    }
+    jcat(buf, cap, len, "}},");
+  }
+
+  if ((mil || dtc[0]) && len + (size_t)strlen(dtc) + 30 < cap) {
+    jcat(buf, cap, len, "\"dtc\":{\"mil\":%s,\"codes\":[", mil ? "true" : "false");
+    const char* p = dtc;
+    bool firstCode = true;
+    while (*p && len + 24 < cap) {
+      const char* comma = strchr(p, ',');
+      size_t n = comma ? (size_t)(comma - p) : strlen(p);
+      jcat(buf, cap, len, "%s\"%.*s\"", firstCode ? "" : ",", (int)n, p);
+      firstCode = false;
+      p += n;
+      if (*p == ',') p++;
+    }
+    jcat(buf, cap, len, "]},");
+  }
+
+  if (fix && len + 110 < cap) {
+    jcat(buf, cap, len,
+         "\"gps\":{\"fix\":true,\"source\":\"internal\",\"lat\":%.6f,\"lng\":%.6f,"
+         "\"speed_kph\":%.1f,\"course\":%.0f},",
+         lat, lng, gpsSpeedKph, course);
+  }
+
+  if (len && buf[len - 1] == ',') buf[len - 1] = '}';
+  else jcat(buf, cap, len, "}");
+
+  return len;
+}

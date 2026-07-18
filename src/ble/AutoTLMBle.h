@@ -80,6 +80,13 @@
 #define AUTOTLM_BLE_SCAN_UUID    "a0817000-7a1c-4c9a-9d10-000000000003"
 #define AUTOTLM_BLE_CREDS_UUID   "a0817000-7a1c-4c9a-9d10-000000000004"
 #define AUTOTLM_BLE_STATUS_UUID  "a0817000-7a1c-4c9a-9d10-000000000005"
+// TELEMETRY (read/notify, encrypted): the local live-data stream. Notifies a
+// compact AutoTLMFrame (AutoTLMFrame::toJsonLive — same field names as the
+// cloud frame, trimmed to one MTU) at ~telemetryHz to an AUTHED, subscribed
+// phone, so the app/CarPlay reads live gauges straight from the unit instead
+// of round-tripping the cloud. Gated behind the session setup-code auth (the
+// frame carries GPS). Streams only while a central is connected + authed.
+#define AUTOTLM_BLE_TELEM_UUID   "a0817000-7a1c-4c9a-9d10-000000000006"
 
 /** STATUS characteristic states (byte 0). */
 enum AutoTLMBleState {
@@ -115,6 +122,14 @@ class AutoTLMBle {
 
   /** Start/stop advertising (service data = device id). Policy lives with the caller. */
   void advertise(bool on);
+
+  /**
+   * Enable/disable the local BLE telemetry stream (default ON). When on, an
+   * authed + subscribed phone receives a compact live frame ~`hz` times a
+   * second over the bonded encrypted link — the CarPlay/app "live gauges"
+   * feed, no cloud round-trip. @param hz 1..10 (clamped)
+   */
+  void telemetry(bool on, uint8_t hz = 4);
 
   bool active() const { return m_impl != nullptr; }
   bool advertising() const { return m_advertising; }
@@ -187,6 +202,11 @@ class AutoTLMBle {
   bool m_scanRetried = false;
   uint32_t m_lastScanMs = 0;
   uint8_t m_scanSeq = 0;
+
+  // Local telemetry stream (sketch-core only).
+  bool m_telemetryOn = true;
+  uint32_t m_telemetryIntervalMs = 250;  // 4 Hz default
+  uint32_t m_lastTelemetryMs = 0;
 #if defined(ESP32)
   portMUX_TYPE m_lock = portMUX_INITIALIZER_UNLOCKED;
 #endif

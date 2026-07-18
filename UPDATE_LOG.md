@@ -3,6 +3,29 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
+## 2026-07-18 — v0.9.0: live gauges straight from the car, and it always finds you
+
+- **Local live data over Bluetooth.** When your phone is at the car, the app
+  can now read live gauges *directly from the unit* over Bluetooth — no
+  round-trip through the internet — so speed, RPM, temps and the rest update
+  instantly and work even with no signal. The cloud stays the source when
+  you're away (remote view, history, fleet); local is used when you're near.
+- **Your phone can always find its unit.** The device now advertises with a
+  private, rotating Bluetooth address that only *your* paired phone can
+  recognize — so you can re-open the app and change WiFi (or anything else)
+  anytime, without power-cycling the unit first, and a stranger still can't
+  track it. Fixes the “can only change WiFi once” / “app can’t see my device”
+  dead-ends.
+- Under the hood: a new encrypted BLE telemetry characteristic streaming a
+  compact live frame (same field names as the cloud frame), resolvable private
+  addressing, and a larger BLE transfer size. `car.bleTelemetry(on, hz)`.
+- **Hardened before shipping.** A pre-release security review of the live
+  stream closed five issues found before any of it reached hardware: the
+  telemetry feed is push-only and only ever reaches a proven-you-own-it phone
+  (so a merely-paired phone can never read your location), the live frame is
+  sized to your phone's actual connection so it always arrives complete, and
+  GPS is never quietly dropped from a busy car's frame.
+
 ## 2026-07-18 — v0.8.1: no more reboot loop while pushing to the cloud
 
 - **Fixed a crash that rebooted the unit every ~15 seconds** when it was on

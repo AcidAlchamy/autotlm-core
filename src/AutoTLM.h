@@ -171,6 +171,13 @@ class AutoTLM {
   }
   /** The BLE module (status state, advertising flag, clearBonds()). */
   AutoTLMBle& ble() { return m_ble; }
+  /**
+   * Enable/disable the local BLE live-telemetry stream (on by default when
+   * BLE is up). An authed, connected phone gets a compact live frame ~`hz`/s
+   * straight from the unit — the CarPlay/app "live gauges" feed with no cloud
+   * round-trip. Cloud push is unaffected (it stays the remote/history source).
+   */
+  void bleTelemetry(bool on, uint8_t hz = 4) { m_ble.telemetry(on, hz); }
 
   /**
    * Offer a re-pair setup AP when a PROVISIONED unit stays offline too long
