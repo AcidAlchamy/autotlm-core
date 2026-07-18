@@ -42,19 +42,27 @@ jobs:
             # therefore also proves the Boards Manager artifact stays healthy.
             arduino-cli core install autotlm:esp32 --additional-urls "$AUTOTLM_INDEX"
           fi
+          # The BLE service's host stack (the one sanctioned third-party lib).
+          # Pinned: the code is verified against 2.5.0's API; a NimBLE major
+          # bump can change signatures/semantics and must be re-reviewed, not
+          # picked up silently.
+          arduino-cli lib install NimBLE-Arduino@2.5.0
 
       - name: Compile every example
         run: |
           set -e
           for ex in examples/*/; do
             fqbn="${{ matrix.fqbn }}"
-            # BLE + WiFi don't fit the generic board's classic 1.3 MB app
-            # partition; the AutoTLM One's standard table (1.9 MB OTA slots)
-            # takes it as-is. Generic gets the big-app scheme for this one.
+            extra=()
+            # On a generic ESP32, BLE is compiled out by default (build-wide
+            # gate in AutoTLMBle.cpp). Example 08 needs it forced on via a
+            # BUILD PROPERTY (a sketch #define can't reach the library — ODR)
+            # plus a big-app partition scheme for the flash.
             if [ "$ex" = "examples/08_BleChangeWifi/" ] && [ "$fqbn" = "esp32:esp32:esp32" ]; then
               fqbn="esp32:esp32:esp32:PartitionScheme=huge_app"
+              extra=(--build-property "compiler.cpp.extra_flags=-DAUTOTLM_ENABLE_BLE=1")
             fi
             echo "::group::$ex ($fqbn)"
-            arduino-cli compile --fqbn "$fqbn" --library . "$ex"
+            arduino-cli compile --fqbn "$fqbn" "${extra[@]}" --library . "$ex"
             echo "::endgroup::"
           done

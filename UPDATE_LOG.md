@@ -3,6 +3,29 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
+## 2026-07-17 — v0.8.0: Bluetooth that shares the chip politely
+
+- **Bluetooth and WiFi now truly coexist.** Real-hardware testing showed the
+  previous Bluetooth stack claimed so much working memory that WiFi could fail
+  to start alongside it — the worst possible timing for a feature whose whole
+  job is switching WiFi networks. The service now runs on a much lighter
+  stack, leaving WiFi its room. (The change-WiFi-from-your-phone feature
+  returns with this release; the app-facing behavior is unchanged.)
+- **Better pairing manners.** The phone pairs on first use exactly the way iOS
+  expects, larger transfers happen in one piece, a stalled connection can no
+  longer camp the unit unreachable, and a successful setup-code entry is now
+  positively acknowledged. Factory-reset flows can forget previously paired
+  phones (`ble().clearBonds()`) so re-pairing is never haunted by stale keys.
+- **Privacy-hardened before shipping.** An in-depth security review of the new
+  Bluetooth service tightened it end to end: the link keeps every message
+  encrypted (network names and status are never readable in the clear), only
+  one phone can talk to a unit at a time, a proven-you-own-it code is required
+  before it will scan or accept a network — with limited attempts — and the
+  unit only makes itself discoverable when you're actually setting it up, never
+  as a broadcast a passer-by could track.
+- Under the hood the BLE build switch became strictly build-wide, closing a
+  subtle misconfiguration risk for custom generic-board builds.
+
 ## 2026-07-17 — v0.7.1 + boards 0.4.0: first-hardware fixes
 
 - **Important board update.** The AutoTLM One board package 0.3.0 could leave a
