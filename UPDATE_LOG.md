@@ -3,6 +3,17 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
+## 2026-07-18 — v0.8.1: no more reboot loop while pushing to the cloud
+
+- **Fixed a crash that rebooted the unit every ~15 seconds** when it was on
+  WiFi and trying to reach the cloud (especially with Bluetooth also running).
+  The network task could wait too long on a slow or unanswered upload and trip
+  the chip's safety timer, forcing a reset. Uploads are now time-boxed well
+  under that limit — a slow upload is simply skipped and retried (drives never
+  lose data; it buffers), and the unit keeps running instead of rebooting.
+  Caught on real hardware the first time a unit ran the full stack — Bluetooth,
+  WiFi and cloud push — at once.
+
 ## 2026-07-17 — v0.8.0: Bluetooth that shares the chip politely
 
 - **Bluetooth and WiFi now truly coexist.** Real-hardware testing showed the

@@ -413,9 +413,15 @@ void AutoTLMNet::pushFrame() {
     unlockCfg();
   }
 
+  // Socket timeouts MUST stay under the FreeRTOS task watchdog (5 s): the net
+  // task runs on core 0 and a single blocking connect/read that ran the old
+  // 8 s ceiling starved the idle task past 5 s → panic reboot (seen on real
+  // hardware once WiFi push + BLE were resident together). 3 s each bounds the
+  // realistic worst case (a slow-or-silent response) well under the watchdog;
+  // a missed push is harmless — the offline ring buffers and retries it.
   WiFiClient client;
-  client.setTimeout(8000);
-  const bool ok = haveIp ? client.connect(ip, port) : client.connect(host, port);
+  client.setTimeout(3000);
+  const bool ok = haveIp ? client.connect(ip, port, 3000) : client.connect(host, port, 3000);
   if (!ok) {
     noteFailure(-1);
     lockCfg();
