@@ -15,6 +15,11 @@ Announce-worthy releases and milestones for the AutoTLM Core library
   already tight could stop a unit rather than simply reporting the problem — it
   now declines gracefully and says why. Bring Bluetooth up early in your sketch
   (right after `car.begin()`); the example and docs show the order.
+- **Board recall made airtight.** The 0.4.0 download always carried the fixed
+  flash layout, but the version tag still referenced the old source — corrected,
+  and a clean install was verified end-to-end to write the correct layout. An
+  automated check now guards the flash offsets on every change so this can't slip
+  through a build again.
 
 ## 2026-07-16 — v0.7.0: change your WiFi from your phone
 
