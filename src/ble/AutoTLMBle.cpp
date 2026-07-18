@@ -80,6 +80,7 @@ class AutoTLMBleImpl {
   NimBLECharacteristic* scan = nullptr;
   NimBLECharacteristic* creds = nullptr;
   NimBLECharacteristic* status = nullptr;
+  NimBLECharacteristic* telem = nullptr;
 
   class ServerCb : public NimBLEServerCallbacks {
    public:
@@ -172,7 +173,20 @@ bool AutoTLMBle::begin(AutoTLM& car, const char* deviceId) {
   // encrypted access (the standard iOS flow) — no force-security-at-connect.
   NimBLEDevice::setSecurityAuth(true /*bonding*/, false /*mitm*/, true /*sc*/);
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
-  NimBLEDevice::setMTU(185);  // keep auth/creds JSON in single writes
+  // Distribute encryption + IDENTITY (IRK) keys both ways: the IRK lets a
+  // bonded phone resolve our rotating private address (below). ENC|ID = 0x03.
+  NimBLEDevice::setSecurityInitKey(BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID);
+  NimBLEDevice::setSecurityRespKey(BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID);
+  // RESOLVABLE PRIVATE ADDRESS: advertise with a rotating address only a
+  // bonded phone (holding our IRK) can resolve — the unit stays discoverable
+  // to its OWNER continuously (no more going dark / reboot-to-re-pair) without
+  // being a followable beacon to strangers. IRK lives in NimBLE's bond store
+  // (NVS) and is stable across reboots; only a factory wipe / clearBonds()
+  // regenerates it (which re-pairs anyway).
+  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RPA_RANDOM_DEFAULT);
+  // A larger ATT MTU lets the compact telemetry frame ride in ONE notify and
+  // the auth/creds JSON in single writes (iOS negotiates down as needed).
+  NimBLEDevice::setMTU(512);
 
   m_impl = new (std::nothrow) AutoTLMBleImpl();
   m_impl && (m_impl->serverCb = new (std::nothrow) AutoTLMBleImpl::ServerCb(this));
@@ -226,6 +240,15 @@ bool AutoTLMBle::begin(AutoTLM& car, const char* deviceId) {
   uint8_t init[2] = {AUTOTLM_BLE_IDLE, 0};
   m_impl->status->setValue(init, 2);
 
+  // Local live-telemetry stream. NOTIFY-ONLY (no READ): the frame carries GPS,
+  // and READ_ENC would only require an encrypted link — which a Just-Works-
+  // bonded but NOT setup-code-authed phone has — letting it READ the last
+  // stored fix. Push-only closes that: NimBLE delivers notifies solely to
+  // subscribers, and tick() only notifies when the session is authed. It also
+  // removes the concurrent-read-vs-setValue path entirely.
+  m_impl->telem = svc->createCharacteristic(
+      AUTOTLM_BLE_TELEM_UUID, NIMBLE_PROPERTY::NOTIFY);
+
   svc->start();
 
   // Advertisement: the Complete 128-bit Service-UUID list in the primary AD
@@ -262,6 +285,13 @@ bool AutoTLMBle::begin(AutoTLM& car, const char* deviceId) {
 // advertise(false) can never race a host-task restart into an ON state.
 void AutoTLMBle::advertise(bool on) {
   m_advertising = on;
+}
+
+void AutoTLMBle::telemetry(bool on, uint8_t hz) {
+  m_telemetryOn = on;
+  if (hz < 1) hz = 1;
+  if (hz > 10) hz = 10;
+  m_telemetryIntervalMs = 1000u / hz;
 }
 
 void AutoTLMBle::reconcileAdvertising() {
@@ -542,6 +572,32 @@ void AutoTLMBle::tick() {
   }
 
   runScanStep();
+
+  // Local live-telemetry: push a compact frame to an AUTHED, connected phone
+  // at the configured rate. Gated on the session auth because the frame
+  // carries GPS; skipped entirely when nobody's connected/authed (no wasted
+  // radio). NimBLE only delivers the notify to a subscribed central.
+  if (m_telemetryOn && m_sessionAuthed && m_authedHandle == m_connHandle &&
+      m_connHandle != 0xFFFF && peerEncrypted()) {
+    const uint32_t now = millis();
+    if (now - m_lastTelemetryMs >= m_telemetryIntervalMs) {
+      m_lastTelemetryMs = now;
+      // Size the frame to the NEGOTIATED ATT MTU, not our 512 preference: iOS
+      // commonly settles at 185, and a notify is capped at MTU-3 — building
+      // larger would silently truncate to invalid JSON on the wire. toJsonLive
+      // trims to whatever `cap` we pass and is always valid within it.
+      const uint16_t mtu = m_impl->server->getPeerInfoByHandle(m_connHandle).getMTU();
+      char buf[512];
+      size_t cap = (mtu > 23) ? (size_t)(mtu - 3) : 20;
+      if (cap > sizeof(buf)) cap = sizeof(buf);
+      AutoTLMFrame f = m_car->frame();
+      const size_t n = f.toJsonLive(buf, cap);
+      if (n) {
+        m_impl->telem->setValue((uint8_t*)buf, n);
+        m_impl->telem->notify();
+      }
+    }
+  }
 }
 
 #else  // BLE compiled out (generic board without -DAUTOTLM_ENABLE_BLE=1) or no ESP32.
@@ -553,6 +609,7 @@ bool AutoTLMBle::begin(AutoTLM&, const char*) {
   return false;
 }
 void AutoTLMBle::advertise(bool) {}
+void AutoTLMBle::telemetry(bool, uint8_t) {}
 void AutoTLMBle::reconcileAdvertising() {}
 bool AutoTLMBle::peerEncrypted() const { return false; }
 bool AutoTLMBle::clearBonds() { return false; }

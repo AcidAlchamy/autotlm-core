@@ -30,6 +30,7 @@ the status LED. Beginner API lives here; power users reach through
 | `bool bleBegin()` | Bring up the BLE change-WiFi service (contract below). Does NOT advertise. |
 | `void bleAdvertise(on)` | Start/stop BLE advertising — WHEN to be discoverable is YOUR policy (recommended: unprovisioned / post-power-on window / SETUP press / WiFi lost; dark while streaming, so a driving car is never a followable beacon). Implies `bleBegin()`. |
 | `AutoTLMBle& ble()` | The BLE module (state, advertising flag). |
+| `void bleTelemetry(on, hz = 4)` | Enable/disable the local BLE live-telemetry stream (default on). An authed, connected phone gets a compact live frame ~`hz`/s straight from the unit — the CarPlay/app "live gauges" feed, no cloud round-trip. Cloud push is unaffected. |
 | `void setReprovisionOnLostWifi(on, afterMs = 120000)` | Provisioned unit offline for `afterMs` → re-raise the (WPA2) setup AP so a phone can re-pair it, no button/cable. Opt-in; conservative (a brief dead zone won't trigger it). |
 | `AutoTLMProvision& provisioning()` | The provisioning module (below). |
 | `void wifi(ssid, pass)` | Connect to WiFi (non-blocking; a core-0 task reconnects forever). Credentials persist to flash; pass `nullptr` to reuse saved ones. |
@@ -192,12 +193,13 @@ handles the code, the code is never stored server-side (Cloud's ruling — a
 phone may cache it locally), and auth is **per-connection** (cleared on
 disconnect).
 
-| Characteristic (`…0002`–`…0005`) | Access | Payload |
+| Characteristic (`…0002`–`…0006`) | Access | Payload |
 |---|---|---|
 | CTRL `…0002` | write (encrypted) | `{"op":"auth","code":"XXXXXXXX"}` unlocks the session; `{"op":"scan"}` then starts an async SSID scan (refused until authed) |
 | SCAN `…0003` | read/notify (enc) | `{"seq":N,"nets":[{"ssid":"…","rssi":-52,"sec":true},…]}` — top 10 by RSSI, deduped, ≤512 B. **Notify is a freshness signal only** (a BLE notification is capped at the negotiated MTU−3 and the list can exceed it); the app must **read** the characteristic (long read) for the full list, and use `seq` to detect a refresh that landed mid-read. Empty/`"[]"` until the session is authed. |
 | CREDS `…0004` | write (encrypted) | `{"code":"XXXXXXXX","ssid":"…","pass":"…"}` |
 | STATUS `…0005` | read/notify (enc) | 2 bytes `[state, detail]` — see below |
+| TELEMETRY `…0006` | read/notify (enc) | The **local live-data stream**: a compact `AutoTLMFrame` (`toJsonLive` — `{"source":"device","live":true,"device":{...},"obd":{gauges + budget-fit pids},"dtc":{...},"gps":{...}}`, same field names as the cloud frame, trimmed to one MTU — drops the bulky `obd.supported` and `dtc.freeze`). Notified ~4 Hz (`car.bleTelemetry(on, hz)`) to an **authed, subscribed** phone, so CarPlay/the app reads live gauges straight from the unit with no cloud round-trip. Auth-gated (the frame carries GPS); streamed only while a central is connected + authed. Empty (`{}`) otherwise. |
 
 STATUS states: `0` idle · `1` creds_received · `2` testing · `3` connected
 (new network persisted — done) · `4` reverted · `5` busy (a change was
@@ -219,13 +221,33 @@ by construction.
 third-party dependency — declared in library.properties, auto-prompted by
 the IDE). Bluedroid could not coexist with WiFi in the plain ESP32's
 internal RAM (the WiFi driver's DMA RX buffers failed to allocate with it
-resident); NimBLE's footprint is a fraction of it. Preferred ATT MTU is 185,
-pairing happens on-demand at first encrypted access (the standard iOS flow),
-and an unauthed central is dropped after a 45 s grace window so a stalled
-connect can't camp the unit. `ble().clearBonds()` forgets every bonded
-phone — call it whenever the unit is factory-reset / NVS-wiped (a stale
-bond otherwise orphans the phone's keys and every reconnect fails until the
-user manually "forgets" the device).
+resident); NimBLE's footprint is a fraction of it. Preferred ATT MTU is 512
+(iOS negotiates down; keeps the compact live frame in one notify), pairing
+happens on-demand at first encrypted access (the standard iOS flow), and an
+unauthed central is dropped after a 45 s grace window so a stalled connect
+can't camp the unit. `ble().clearBonds()` forgets every bonded phone — call
+it whenever the unit is factory-reset / NVS-wiped (a stale bond otherwise
+orphans the phone's keys and every reconnect fails until the user manually
+"forgets" the device).
+
+**Resolvable Private Address (findable to the owner, invisible to strangers).**
+The unit advertises with a **rotating private address** that only a bonded
+phone (holding the unit's IRK, exchanged at pairing) can resolve. So the
+owner's phone can find and reconnect to its unit **anytime** — the firmware
+no longer has to go dark while streaming to stay un-trackable, which fixes
+the "can only change WiFi once / app can't see my working device" dead-end.
+The IRK persists in the bond store (NVS) and is stable across reboots; only
+a factory wipe / `clearBonds()` regenerates it (which re-pairs anyway). One
+caveat: after an NVS wipe the phone must "forget" the stale device once, as
+with any re-pair.
+
+Limitation (known): the RPA rotates the MAC, but the scan **response** still
+carries the exact device id in cleartext service data (so the app can match
+its owned unit). That defeats RPA against a *determined active scanner* that
+sends SCAN_REQ to pull the response — passive tracking is stopped, active is
+not. The full-privacy path is to drop the broadcast id and have the app match
+its bonded unit by iOS's resolved-peripheral identity instead; that's a MOBILE
+matching change, tracked separately.
 
 **Call `car.bleBegin()` early — right after `car.begin()`, BEFORE
 `car.provision()`.** The BT stack needs a large contiguous allocation, and the

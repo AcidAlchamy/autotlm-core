@@ -89,6 +89,15 @@ struct AutoTLMFrame {
    * @return number of characters written (0 if the buffer is hopeless).
    */
   size_t toJson(char* buf, size_t cap) const;
+
+  /**
+   * Serialize a COMPACT live frame for the local BLE telemetry stream: same
+   * field names as toJson (the app reuses its parser) but trimmed to fit one
+   * BLE notify — headline gauges always, PIDs up to the `cap` budget, dtc +
+   * gps; drops the bulky `obd.supported` and `dtc.freeze`. Carries
+   * `"live":true`. Always valid JSON within `cap`. @return chars written
+   */
+  size_t toJsonLive(char* buf, size_t cap) const;
 };
 
 #endif // AUTOTLM_FRAME_H
