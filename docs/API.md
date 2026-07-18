@@ -195,20 +195,37 @@ disconnect).
 | Characteristic (`…0002`–`…0005`) | Access | Payload |
 |---|---|---|
 | CTRL `…0002` | write (encrypted) | `{"op":"auth","code":"XXXXXXXX"}` unlocks the session; `{"op":"scan"}` then starts an async SSID scan (refused until authed) |
-| SCAN `…0003` | read/notify (enc) | `{"seq":N,"nets":[{"ssid":"…","rssi":-52,"sec":true},…]}` — top 10 by RSSI, deduped, ≤512 B. **Notify is a freshness signal only** (Bluedroid truncates notifications to MTU−3); the app must **read** the characteristic (long read) for the full list, and use `seq` to detect a refresh that landed mid-read. Empty/`"[]"` until the session is authed. |
+| SCAN `…0003` | read/notify (enc) | `{"seq":N,"nets":[{"ssid":"…","rssi":-52,"sec":true},…]}` — top 10 by RSSI, deduped, ≤512 B. **Notify is a freshness signal only** (a BLE notification is capped at the negotiated MTU−3 and the list can exceed it); the app must **read** the characteristic (long read) for the full list, and use `seq` to detect a refresh that landed mid-read. Empty/`"[]"` until the session is authed. |
 | CREDS `…0004` | write (encrypted) | `{"code":"XXXXXXXX","ssid":"…","pass":"…"}` |
 | STATUS `…0005` | read/notify (enc) | 2 bytes `[state, detail]` — see below |
 
 STATUS states: `0` idle · `1` creds_received · `2` testing · `3` connected
 (new network persisted — done) · `4` reverted · `5` busy (a change was
-already validating — retry after it settles). `detail` is nonzero only for
-state 4: `1` SSID not found · `2` auth failed (wrong password) · `3`
-timeout/other (render as "couldn't connect", never "wrong password") · `4`
-rejected (bad/absent setup code) · `5` no SSID in the creds write. A terminal
-state **holds until the next CREDS write _or_ any other WiFi change** (a
-USB/sketch `changeWifi()` also drives STATUS, so the app always reflects
-reality). The characteristic feeds off `onWifiChange()` from a single
-coherent state snapshot, so it is race-free by construction.
+already validating — retry after it settles) · `6` auth_ok (setup code
+accepted — the positive ack, so an app awaiting a response never times out
+on success). `detail` is nonzero only for state 4: `1` SSID not found · `2`
+auth failed (wrong password) · `3` timeout/other (render as "couldn't
+connect", never "wrong password") · `4` rejected (bad/absent setup code) ·
+`5` no SSID in the creds write. A terminal state **holds until the next
+CREDS write, any other WiFi change, or an auth op** — so a watcher that
+dropped mid-validation reconnects and **READS STATUS FIRST to collect the
+held verdict, then auths** (that ordering matters: the auth_ok notify
+overwrites the held state). A USB/sketch `changeWifi()` also drives STATUS,
+so the app always reflects reality. The characteristic feeds off
+`onWifiChange()` from a single coherent state snapshot, so it is race-free
+by construction.
+
+**Host stack: NimBLE** (`NimBLE-Arduino`, the one owner-sanctioned
+third-party dependency — declared in library.properties, auto-prompted by
+the IDE). Bluedroid could not coexist with WiFi in the plain ESP32's
+internal RAM (the WiFi driver's DMA RX buffers failed to allocate with it
+resident); NimBLE's footprint is a fraction of it. Preferred ATT MTU is 185,
+pairing happens on-demand at first encrypted access (the standard iOS flow),
+and an unauthed central is dropped after a 45 s grace window so a stalled
+connect can't camp the unit. `ble().clearBonds()` forgets every bonded
+phone — call it whenever the unit is factory-reset / NVS-wiped (a stale
+bond otherwise orphans the phone's keys and every reconnect fails until the
+user manually "forgets" the device).
 
 **Call `car.bleBegin()` early — right after `car.begin()`, BEFORE
 `car.provision()`.** The BT stack needs a large contiguous allocation, and the
@@ -228,12 +245,15 @@ Flash note: BLE + WiFi need more than the classic 1.3 MB app partition — the
 AutoTLM One's standard table (1.9 MB OTA slots, boards ≥ 0.3.0) fits it;
 generic ESP32 boards need a big-app scheme (example 08's header says so).
 
-**Compiled in only when `AUTOTLM_ENABLE_BLE`.** To keep lean telemetry
-sketches from linking the ~0.5 MB Bluedroid stack, BLE defaults **on for the
-AutoTLM One** (its OTA partition has room) and **off for a generic ESP32**.
-Force it either way by defining `AUTOTLM_ENABLE_BLE 1` (or `0`) before
-`#include <AutoTLM.h>`. When it's off, `car.bleBegin()` is a no-op returning
-`false` and `car.ble()` isn't declared.
+**Compiled in only when `AUTOTLM_ENABLE_BLE`** — a **build-wide** macro
+resolved inside the library: default **on for the AutoTLM One**, **off for a
+generic ESP32**. Override with a build property, e.g.
+`--build-property "compiler.cpp.extra_flags=-DAUTOTLM_ENABLE_BLE=1"`.
+**Never define it in a sketch** — a sketch `#define` can't reach the
+library's translation units and would silently split the class layout (ODR).
+The facade API and class layout are identical in every build; when BLE is
+compiled out, `car.bleBegin()` returns `false` with a log and the rest
+no-op.
 
 ---
 

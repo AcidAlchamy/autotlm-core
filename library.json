@@ -1,6 +1,7 @@
 {
   "name": "AutoTLM",
-  "version": "0.7.1",
+  "version": "0.8.0",
+  "dependencies": [{ "name": "NimBLE-Arduino" }],
   "description": "The library for the AutoTLM One car-telemetry dev dongle: OBD-II PIDs/DTCs/VIN over from-scratch ISO 15765-4 (TWAI), GNSS, IMU, captive-portal provisioning and a road-proven dual-core HTTP telemetry push.",
   "keywords": "obd, obd-ii, can, iso15765, telemetry, car, automotive, gnss, gps, imu, esp32",
   "repository": {

@@ -33,23 +33,14 @@
 
 #include <Arduino.h>
 
-// BLE (the change-WiFi service) links the whole Bluedroid stack — ~0.5 MB of
-// flash. It's ON by default only on the AutoTLM One (whose OTA partition has
-// room for it); on a generic ESP32 it's OFF so lean telemetry sketches keep
-// fitting the stock 1.3 MB app partition. Force it either way by defining
-// AUTOTLM_ENABLE_BLE before including this header (example 08 does).
-#ifndef AUTOTLM_ENABLE_BLE
-#  if defined(ARDUINO_AUTOTLM_ONE)
-#    define AUTOTLM_ENABLE_BLE 1
-#  else
-#    define AUTOTLM_ENABLE_BLE 0
-#  endif
-#endif
-
+// BLE (the change-WiFi service, NimBLE host) is gated BUILD-WIDE inside
+// ble/AutoTLMBle.cpp: ON by default for the AutoTLM One, OFF for a generic
+// ESP32 (override with a -DAUTOTLM_ENABLE_BLE=… build property). The class
+// below is layout-identical in every build — never gate it from a sketch
+// #define; a sketch macro can't reach the library's translation units and
+// would silently split the class layout (ODR).
 #include "AutoTLMFrame.h"
-#if AUTOTLM_ENABLE_BLE
 #include "ble/AutoTLMBle.h"
-#endif
 #include "core/AutoTLMConfig.h"
 #include "gnss/AutoTLMGNSS.h"
 #include "hal/AutoTLMHAL.h"
@@ -153,10 +144,11 @@ class AutoTLM {
   }
 
   // -------------------------------------------------------------- BLE
-  // Compiled in only when AUTOTLM_ENABLE_BLE (default: on for the AutoTLM One,
-  // off for a generic ESP32 so lean sketches don't link Bluedroid). Define
-  // AUTOTLM_ENABLE_BLE=1 before including AutoTLM.h to force it on elsewhere.
-#if AUTOTLM_ENABLE_BLE
+  // NimBLE-hosted; compiled in when the AutoTLM One board is selected (or
+  // -DAUTOTLM_ENABLE_BLE=1 is passed as a build property). When compiled
+  // out, bleBegin() returns false with a log and everything else no-ops —
+  // these methods and the m_ble member exist in EVERY build (single class
+  // layout; see the header note).
   /**
    * Bring up the BLE change-WiFi service (GATT service + characteristics;
    * see ble/AutoTLMBle.h for the contract). Does NOT advertise — call
@@ -165,11 +157,10 @@ class AutoTLM {
    * station WiFi is lost; go dark while associated and pushing, so a driving
    * car is never a followable beacon).
    *
-   * CALL IT EARLY: right after begin(), BEFORE provision(). The BT stack
-   * needs a large contiguous allocation, and the captive portal (SoftAP +
-   * DNS + web server) fragments the heap enough to starve it on a real
-   * firmware. Called too late it returns false (with a log) rather than
-   * bringing the unit down.
+   * CALL IT EARLY: right after begin(), BEFORE provision(). The BLE host
+   * needs contiguous heap, and the captive portal (SoftAP + DNS + web
+   * server) fragments it on a real firmware. Called too late it returns
+   * false (with a log) rather than bringing the unit down.
    * @return true if the service is up
    */
   bool bleBegin() { return m_ble.begin(*this, m_frame.deviceId); }
@@ -178,13 +169,8 @@ class AutoTLM {
     if (on && !m_ble.active()) bleBegin();
     m_ble.advertise(on);
   }
-  /** The BLE module (status state, advertising flag). */
+  /** The BLE module (status state, advertising flag, clearBonds()). */
   AutoTLMBle& ble() { return m_ble; }
-#else
-  /** BLE compiled out (define AUTOTLM_ENABLE_BLE=1 to enable). No-op. */
-  bool bleBegin() { return false; }
-  void bleAdvertise(bool) {}
-#endif
 
   /**
    * Offer a re-pair setup AP when a PROVISIONED unit stays offline too long
@@ -291,9 +277,7 @@ class AutoTLM {
   void (*m_wifiCb)(int, int, void*) = nullptr;
   void* m_wifiCbCtx = nullptr;
   int m_lastWifiSt = 0;  // AUTOTLM_WIFI_IDLE
-#if AUTOTLM_ENABLE_BLE
-  AutoTLMBle m_ble;
-#endif
+  AutoTLMBle m_ble;      // always present — single class layout in every build
   // Offline-reprovision policy (opt-in; see setReprovisionOnLostWifi).
   bool m_reproEnabled = false;
   uint32_t m_reproAfterMs = 120000;

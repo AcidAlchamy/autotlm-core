@@ -13,16 +13,15 @@
  * and whenever WiFi has been lost for a while; it goes dark while happily
  * streaming, so a driving car is not a followable beacon.
  *
- * NOTE flash size: BLE + WiFi together need more than the classic 1.3 MB app
- * partition. On the AutoTLM One board this just works (its standard
- * partition table has 1.9 MB OTA slots); on a generic ESP32 select a big-app
- * partition scheme (e.g. "Huge App").
+ * BLE (NimBLE host) is compiled in by default only on the AutoTLM One board
+ * — there it Just Works. Building this example on a GENERIC ESP32 needs two
+ * things: a big-app partition scheme (e.g. "Huge App") and the build-wide
+ * define, passed as a build property — NOT as a sketch #define (a sketch
+ * macro can't reach the library and would corrupt the class layout):
  *
- * BLE is compiled in by default only on the AutoTLM One. This define forces
- * it on for any board (a generic ESP32 build of this example needs it), and
- * is harmless on the One. It MUST precede the AutoTLM.h include.
+ *   arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=huge_app \
+ *     --build-property "compiler.cpp.extra_flags=-DAUTOTLM_ENABLE_BLE=1" ...
  */
-#define AUTOTLM_ENABLE_BLE 1
 #include <AutoTLM.h>
 
 AutoTLM car;
