@@ -159,7 +159,7 @@ class AutoTLMBle {
 
   // Connection lifecycle — called from the NimBLE server callbacks (host task).
   void onConnect(uint16_t connHandle);
-  void onDisconnect();
+  void onDisconnect(uint16_t connHandle);
 
  private:
   void setStatus(uint8_t state, uint8_t detail);

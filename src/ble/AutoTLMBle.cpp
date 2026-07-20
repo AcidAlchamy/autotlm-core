@@ -88,8 +88,8 @@ class AutoTLMBleImpl {
     void onConnect(NimBLEServer*, NimBLEConnInfo& info) override {
       owner->onConnect(info.getConnHandle());
     }
-    void onDisconnect(NimBLEServer*, NimBLEConnInfo&, int) override {
-      owner->onDisconnect();
+    void onDisconnect(NimBLEServer*, NimBLEConnInfo& info, int) override {
+      owner->onDisconnect(info.getConnHandle());
     }
     AutoTLMBle* owner;
   };
@@ -323,19 +323,34 @@ bool AutoTLMBle::clearBonds() {
 
 // Host task: flags only. tick() reconciles the radio to the new state.
 void AutoTLMBle::onConnect(uint16_t connHandle) {
+  // ADOPT the new central even if we still think we're connected to an older
+  // handle. We never advertise while connected, so a genuine second peer can't
+  // reach us — a new onConnect therefore means the previous link is stale (its
+  // disconnect was missed or is arriving late, e.g. iOS reconnecting right
+  // after a WiFi switch). "First central wins" wedged that case: the reconnect
+  // was ignored and every auth write hit a dead session until a reboot. Adopt
+  // the new handle, start a fresh auth session, and force-drop the ghost.
+  uint16_t stale = 0xFFFF;
   taskENTER_CRITICAL(&m_lock);
-  if (m_connHandle == 0xFFFF) {  // first central wins; we won't be advertising for a second
-    m_connHandle = connHandle;
-    m_connectMs = millis();
-    m_sessionAuthed = false;
-    m_authedHandle = 0xFFFF;
-    m_authFails = 0;
-  }
+  if (m_connHandle != 0xFFFF && m_connHandle != connHandle) stale = m_connHandle;
+  m_connHandle = connHandle;
+  m_connectMs = millis();
+  m_sessionAuthed = false;
+  m_authedHandle = 0xFFFF;
+  m_authFails = 0;
   taskEXIT_CRITICAL(&m_lock);
+  if (stale != 0xFFFF && m_impl) m_impl->server->disconnect(stale);
 }
 
-void AutoTLMBle::onDisconnect() {
+void AutoTLMBle::onDisconnect(uint16_t connHandle) {
+  // Only clear our tracking if it's the CURRENT central dropping. A superseded/
+  // stale handle disconnecting late (see onConnect) must NOT clobber the fresh
+  // session we just adopted for the reconnected phone.
   taskENTER_CRITICAL(&m_lock);
+  if (connHandle != m_connHandle && m_connHandle != 0xFFFF) {
+    taskEXIT_CRITICAL(&m_lock);
+    return;
+  }
   m_connHandle = 0xFFFF;
   m_sessionAuthed = false;
   m_authedHandle = 0xFFFF;
@@ -614,7 +629,7 @@ void AutoTLMBle::reconcileAdvertising() {}
 bool AutoTLMBle::peerEncrypted() const { return false; }
 bool AutoTLMBle::clearBonds() { return false; }
 void AutoTLMBle::onConnect(uint16_t) {}
-void AutoTLMBle::onDisconnect() {}
+void AutoTLMBle::onDisconnect(uint16_t) {}
 void AutoTLMBle::feedWifiChange(int, int) {}
 void AutoTLMBle::setStatus(uint8_t, uint8_t) {}
 void AutoTLMBle::runScanStep() {}

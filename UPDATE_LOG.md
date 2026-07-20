@@ -3,6 +3,17 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
+## 2026-07-20 — v0.9.1 (pending review): Bluetooth reconnects cleanly after you step away
+
+- **Fixes the "reconnect and it's stuck" bug.** If your phone was linked over
+  Bluetooth and you walked away and came back, the unit could hold onto the old,
+  dead connection and refuse the new one — the app would say the unit was "busy"
+  and you'd have to reboot it. The unit now recognizes a returning phone, starts
+  a fresh session for it, and drops the stale link — so stepping away and coming
+  back just re-links, no reboot. (Provisioning/cloud were never affected.)
+- Next in this line: the setup code becomes a one-time step (a phone you've
+  already paired won't be asked for it again on reconnect).
+
 ## 2026-07-18 — v0.9.0: live gauges straight from the car, and it always finds you
 
 - **Local live data over Bluetooth.** When your phone is at the car, the app
