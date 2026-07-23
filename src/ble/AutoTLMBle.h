@@ -189,6 +189,10 @@ class AutoTLMBle {
   volatile uint16_t m_connHandle = 0xFFFF;  ///< 0xFFFF = none
   volatile uint32_t m_connectMs = 0;
   volatile bool m_needScanReset = false;    ///< onDisconnect (host task) → tick() blanks SCAN
+  // onConnect (host task) → tick(): a superseded handle to force-drop on the
+  // sketch core (keeps NimBLE's single-writer rule; see the file header).
+  volatile uint16_t m_staleToDrop = 0xFFFF;
+  uint16_t m_lastLoggedHandle = 0xFFFF;     ///< sketch-core only: last handle we logged a transition for
 
   // Host-task → tick() handoff (BLE callbacks copy under m_lock, set the flag).
   volatile bool m_authPending = false;

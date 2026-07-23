@@ -321,25 +321,35 @@ bool AutoTLMBle::clearBonds() {
   return ok;
 }
 
-// Host task: flags only. tick() reconciles the radio to the new state.
+// Host task: FLAGS ONLY (honors the single-writer rule at the top of this file
+// — the actual NimBLE work happens in tick() on the sketch core).
 void AutoTLMBle::onConnect(uint16_t connHandle) {
-  // ADOPT the new central even if we still think we're connected to an older
-  // handle. We never advertise while connected, so a genuine second peer can't
-  // reach us — a new onConnect therefore means the previous link is stale (its
-  // disconnect was missed or is arriving late, e.g. iOS reconnecting right
-  // after a WiFi switch). "First central wins" wedged that case: the reconnect
-  // was ignored and every auth write hit a dead session until a reboot. Adopt
-  // the new handle, start a fresh auth session, and force-drop the ghost.
-  uint16_t stale = 0xFFFF;
+  // ADOPT the connecting central. In the normal case m_connHandle is already
+  // 0xFFFF here: we never advertise while connected, so the prior link's
+  // onDisconnect must have run (clearing the handle and re-enabling advertising)
+  // before this central could attach. The adopt-over-stale branch only bites in
+  // the rare window where a second central attaches before we saw the first
+  // drop; there we take the new handle, start a fresh (unauthed) session, and
+  // hand the old handle to tick() for teardown. NOTE: a genuinely *missed*
+  // disconnect can't be fixed here (the device is dark, so no onConnect fires) —
+  // tick()'s liveness watchdog recovers that case.
   taskENTER_CRITICAL(&m_lock);
-  if (m_connHandle != 0xFFFF && m_connHandle != connHandle) stale = m_connHandle;
+  if (m_connHandle != 0xFFFF && m_connHandle != connHandle) m_staleToDrop = m_connHandle;
   m_connHandle = connHandle;
   m_connectMs = millis();
   m_sessionAuthed = false;
   m_authedHandle = 0xFFFF;
   m_authFails = 0;
+  // Defense in depth: never let a superseded session's queued auth/creds be
+  // consumed for the freshly-adopted central. A write on the new link can only
+  // arrive AFTER this callback, so nothing legitimate is discarded.
+  m_authPending = false;
+  m_credsPending = false;
+  memset(m_pendAuthCode, 0, sizeof(m_pendAuthCode));
+  memset(m_pendCode, 0, sizeof(m_pendCode));
+  memset(m_pendSsid, 0, sizeof(m_pendSsid));
+  memset(m_pendPass, 0, sizeof(m_pendPass));
   taskEXIT_CRITICAL(&m_lock);
-  if (stale != 0xFFFF && m_impl) m_impl->server->disconnect(stale);
 }
 
 void AutoTLMBle::onDisconnect(uint16_t connHandle) {
@@ -503,6 +513,64 @@ void AutoTLMBle::runScanStep() {
 
 void AutoTLMBle::tick() {
   if (!m_impl || !m_car) return;
+
+  // Tear down a superseded central that onConnect adopted over. Done here on the
+  // sketch core — the single writer of NimBLE state (file header). Rare: needs
+  // two links to have briefly coexisted.
+  uint16_t toDrop;
+  taskENTER_CRITICAL(&m_lock);
+  toDrop = m_staleToDrop;
+  m_staleToDrop = 0xFFFF;
+  taskEXIT_CRITICAL(&m_lock);
+  if (toDrop != 0xFFFF) {
+    m_impl->server->disconnect(toDrop);
+    if (m_log) m_log->printf("BLE:dropped superseded handle %u\n", (unsigned)toDrop);
+  }
+
+  // LIVENESS WATCHDOG — the auth-deaf reconnect-wedge fix. If we still track a
+  // central but the controller has no such live connection, that link's
+  // disconnect event was lost. Nothing else releases an AUTHED-but-dead handle
+  // (the unauthed-grace drop below is !m_sessionAuthed-gated), so the unit would
+  // stay dark — not advertising, not re-linkable — until a reboot. Release it
+  // here so reconcileAdvertising() resumes advertising and the phone can
+  // re-link with no reboot. ble_gap_conn_find() is authoritative (0 == the
+  // handle is a live connection); the re-check under the lock makes this safe
+  // against a concurrent adopt on the host task.
+  if (m_connHandle != 0xFFFF) {
+    const uint16_t h = m_connHandle;
+    ble_gap_conn_desc d;
+    if (ble_gap_conn_find(h, &d) != 0) {
+      bool released = false;
+      taskENTER_CRITICAL(&m_lock);
+      if (m_connHandle == h) {
+        m_connHandle = 0xFFFF;
+        m_sessionAuthed = false;
+        m_authedHandle = 0xFFFF;
+        m_authPending = false;
+        m_credsPending = false;
+        m_needScanReset = true;
+        memset(m_pendCode, 0, sizeof(m_pendCode));
+        memset(m_pendSsid, 0, sizeof(m_pendSsid));
+        memset(m_pendPass, 0, sizeof(m_pendPass));
+        memset(m_pendAuthCode, 0, sizeof(m_pendAuthCode));
+        released = true;
+      }
+      taskEXIT_CRITICAL(&m_lock);
+      if (released && m_log)
+        m_log->printf("BLE:released dead handle %u (missed disconnect) — re-advertising\n", (unsigned)h);
+    }
+  }
+
+  // Diagnostics: log connection-handle transitions (connect / disconnect /
+  // adopt) so a field reconnect issue leaves a serial trace to read back.
+  // Snapshot the volatile once so the logged source/target stay self-consistent
+  // if the host task mutates m_connHandle mid-block.
+  const uint16_t curHandle = m_connHandle;
+  if (curHandle != m_lastLoggedHandle) {
+    if (m_log) m_log->printf("BLE:conn handle %u -> %u\n",
+                             (unsigned)m_lastLoggedHandle, (unsigned)curHandle);
+    m_lastLoggedHandle = curHandle;
+  }
 
   reconcileAdvertising();
 
