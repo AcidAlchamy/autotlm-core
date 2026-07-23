@@ -282,7 +282,8 @@ void AutoTLMOBD::readFreeze() {
     return;
   }
   const int raw = m_hal->obdFreezeDTC();
-  if (raw <= 0) {  // 0 = none stored, -1 = board can't read mode 02
+  if (raw < 0) return;  // no answer / can't read mode 02 — don't wipe a real snapshot on silence
+  if (raw == 0) {       // the ECU confirmed: no freeze frame stored
     m_freezeCount = 0;
     m_freezeCode[0] = 0;
     return;
@@ -368,21 +369,56 @@ const char* AutoTLMOBD::dtcAt(int i) const {
   return m_dtcCodes[i];
 }
 
-void AutoTLMOBD::clearDTCs() {
-  if (!m_hal || !m_connected) return;
-  m_hal->obdClearDTC();  // functional mode 04: every module clears
-  m_dtcCount = 0;
-  m_dtcStr[0] = 0;
-  m_seenCount = 0;
-  m_freezeCount = 0;  // mode 04 erases freeze frames too
-  m_freezeCode[0] = 0;
-  for (int i = 0; i < m_moduleCount; i++) {
-    // Keep the ids; wipe the lists. Permanent codes survive a clear by
-    // design — the next per-module sweep repopulates them from mode 0A.
-    const uint32_t id = m_modules[i].id;
-    m_modules[i] = ModuleState{};
-    m_modules[i].id = id;
+AutoTLMClearResult AutoTLMOBD::clearDTCs() {
+  AutoTLMClearResult r = {};
+  r.responderCount = -1;  // default: couldn't clear (no link / not connected)
+  if (!m_hal || !m_connected) return r;
+
+  AutoTLMClearResponder resp[AUTOTLM_MAX_MODULES];
+  const int n = m_hal->obdClearDTC(resp, AUTOTLM_MAX_MODULES);
+  const int cnt = n > AUTOTLM_MAX_MODULES ? AUTOTLM_MAX_MODULES : n;
+  r.responderCount = (int8_t)(n < 0 ? -1 : cnt);
+  // -1 = board can't clear, 0 = the bus was SILENT. Either way the vehicle
+  // confirmed nothing, so wipe NOTHING and hand the caller the honest result.
+  if (n <= 0) return r;
+
+  for (int i = 0; i < cnt; i++) {
+    r.responders[i] = resp[i];
+    if (resp[i].verdict == AUTOTLM_CLEAR_CONFIRMED) r.anyConfirmed = true;
+    else if (resp[i].verdict == AUTOTLM_CLEAR_REFUSED) r.anyRefused = true;
   }
+
+  // Wipe ONLY what a module CONFIRMED it cleared. Permanent (mode 0A) codes
+  // survive Mode $04 by design; the next per-module sweep repopulates them.
+  for (int i = 0; i < cnt; i++) {
+    if (resp[i].verdict != AUTOTLM_CLEAR_CONFIRMED) continue;
+    for (int m = 0; m < m_moduleCount; m++) {
+      if (m_modules[m].id != resp[i].id) continue;
+      m_modules[m].nStored = 0;
+      m_modules[m].nPending = 0;
+      m_modules[m].nSeen = 0;  // a cleared code that returns should re-fire the callback
+      break;
+    }
+  }
+
+  if (m_moduleCount > 0) {
+    rebuildAggregate();  // the aggregate now reflects the confirmed clears + any survivors
+    // Freeze is a single functional snapshot we can't attribute to a responder,
+    // so drop it only once NO stored code survives — a SILENT freeze-owner must
+    // not have its frame erased just because a different module cleared.
+    if (m_dtcCount == 0) {
+      m_freezeCount = 0;
+      m_freezeCode[0] = 0;
+    }
+  } else if (r.anyConfirmed && !r.anyRefused) {
+    // Single-module view (no enumeration): a clean confirm clears everything.
+    m_dtcCount = 0;
+    m_dtcStr[0] = 0;
+    m_seenCount = 0;
+    m_freezeCount = 0;
+    m_freezeCode[0] = 0;
+  }
+  return r;
 }
 
 void AutoTLMOBD::fillFrame(bool* pidHave, int* pidVal) const {

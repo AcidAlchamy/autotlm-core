@@ -72,12 +72,18 @@ class BoardFreematicsOnePlus : public AutoTLMHAL {
   }
 
   int obdReadDTC(uint16_t* codes, int maxCodes) override {
-    if (!m_linkUp) return 0;
-    return m_obd.readDTC(codes, maxCodes);
+    if (!m_linkUp) return -1;                  // no link → no answer, not "no codes"
+    return m_obd.readDTC(codes, maxCodes);     // co-processor: code count (0 = none)
   }
 
-  void obdClearDTC() override {
-    if (m_linkUp) m_obd.clearDTC();
+  int obdClearDTC(AutoTLMClearResponder* out, int max) override {
+    (void)out; (void)max;
+    if (!m_linkUp) return -1;
+    // The co-processor sends Mode $04 but surfaces no per-ECU verdict, so this
+    // board cannot honestly confirm the clear. Report "sent, unconfirmed" (0
+    // responders) rather than fake a success — the caller then wipes nothing.
+    m_obd.clearDTC();
+    return 0;
   }
 
   bool obdVIN(char* buf, size_t bufsize) override {
