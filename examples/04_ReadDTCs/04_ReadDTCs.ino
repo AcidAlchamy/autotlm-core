@@ -46,7 +46,29 @@ void loop() {
   }
 
   if (Serial.available() && Serial.read() == 'c') {
-    Serial.println("clearing stored codes...");
-    car.obd().clearDTCs();
+    Serial.println("requesting a clear (Mode $04)...");
+    // clearDTCs() returns the vehicle's ACTUAL verdict — it never assumes the
+    // clear worked. An ECU with the engine running normally refuses (NRC 0x22).
+    AutoTLMClearResult r = car.obd().clearDTCs();
+    if (r.responderCount < 0) {
+      Serial.println("  can't clear — not connected to the ECU");
+    } else if (r.responderCount == 0) {
+      Serial.println("  no ECU answered — NOTHING was cleared (is the bus alive?)");
+    } else {
+      for (int i = 0; i < r.responderCount; i++) {
+        const AutoTLMClearResponder& m = r.responders[i];
+        if (m.verdict == AUTOTLM_CLEAR_CONFIRMED)
+          Serial.printf("  0x%lX: cleared\n", (unsigned long)m.id);
+        else
+          Serial.printf("  0x%lX: REFUSED (NRC 0x%02X%s)\n", (unsigned long)m.id, m.nrc,
+                        m.nrc == 0x22 ? " conditionsNotCorrect — engine running?" : "");
+      }
+      if (r.anyRefused && !r.anyConfirmed)
+        Serial.println("  the car refused — codes are NOT cleared (try key on, engine off)");
+      else if (r.anyRefused)
+        Serial.println("  partial: some modules cleared, some refused");
+      else
+        Serial.println("  all responding modules cleared");
+    }
   }
 }

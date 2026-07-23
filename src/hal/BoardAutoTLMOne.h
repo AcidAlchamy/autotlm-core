@@ -161,8 +161,8 @@ class BoardAutoTLMOne : public AutoTLMHAL {
     const uint8_t req[] = {0x03};
     uint8_t resp[64];
     const int n = obdRequest(req, sizeof(req), resp, sizeof(resp));
-    if (n < 1 || resp[0] != 0x43) return 0;
-    return parseDtcPayload(resp, n, codes, maxCodes);
+    if (n < 1 || resp[0] != 0x43) return -1;  // no/bad answer — NOT "no codes"
+    return parseDtcPayload(resp, n, codes, maxCodes);  // 0 here = a confirmed "no codes"
   }
 
   int obdEnumerate(uint32_t* respIds, int max) override {
@@ -212,10 +212,64 @@ class BoardAutoTLMOne : public AutoTLMHAL {
     return parseDtcPayload(resp, n, codes, maxCodes);
   }
 
-  void obdClearDTC() override {
-    const uint8_t req[] = {0x04};
-    uint8_t resp[8];
-    obdRequest(req, sizeof(req), resp, sizeof(resp));  // expect 0x44 (or silence)
+  int obdClearDTC(AutoTLMClearResponder* out, int max) override {
+    if (max <= 0 || (!m_twaiUp && !twaiUp())) return -1;
+
+    // Drain stale frames so a previous request's answer can't be miscounted.
+    twai_message_t rx;
+    while (twai_receive(&rx, 0) == ESP_OK) {}
+
+    // Functional Mode $04 broadcast (0x7DF): every emissions ECU clears its own
+    // data and answers independently — 01 44 (done) or 03 7F 04 <NRC> (refused).
+    twai_message_t tx = {};
+    tx.identifier = AUTOTLM_OBD_REQ_ID;
+    tx.data_length_code = 8;
+    tx.data[0] = 1;      // single-frame PCI, length 1
+    tx.data[1] = 0x04;   // service $04
+    if (twai_transmit(&tx, pdMS_TO_TICKS(20)) != ESP_OK) {
+      twaiUp();
+      return -1;
+    }
+
+    // Collect EVERY responder until P2 — NOT first-wins. Later modules can
+    // refuse (7F 04 22 conditionsNotCorrect, normal with the engine running)
+    // while earlier ones cleared; stopping at the first answer is exactly how
+    // the old code reported success while a module rejected.
+    int n = 0;
+    // Absolute ceiling: a clear collects ALL responders (never returns early),
+    // so a stuck/faulty ECU spamming responsePending (0x78) must not be able to
+    // extend the window forever and starve the sensor core.
+    const uint32_t hardStop = millis() + 15000;
+    uint32_t deadline = millis() + AUTOTLM_OBD_TIMEOUT_MS;
+    while ((int32_t)(deadline - millis()) > 0 && (int32_t)(hardStop - millis()) > 0 && n < max) {
+      if (twai_receive(&rx, pdMS_TO_TICKS(20)) != ESP_OK) continue;
+      if (rx.extd || rx.identifier < AUTOTLM_OBD_RESP_MIN || rx.identifier > AUTOTLM_OBD_RESP_MAX)
+        continue;
+      bool dup = false;
+      for (int i = 0; i < n; i++)
+        if (out[i].id == rx.identifier) { dup = true; break; }
+      if (dup) continue;
+      if ((rx.data[0] >> 4) != 0x0) continue;  // clear answers are single-frame
+      const uint8_t len = rx.data[0] & 0x0F;
+      if (len >= 1 && rx.data[1] == 0x44) {
+        out[n].id = rx.identifier;
+        out[n].verdict = AUTOTLM_CLEAR_CONFIRMED;
+        out[n].nrc = 0;
+        n++;
+      } else if (len >= 3 && rx.data[1] == 0x7F && rx.data[2] == 0x04) {
+        if (rx.data[3] == 0x78) {              // responsePending: grant time, capped by hardStop
+          const uint32_t ext = millis() + 2000;
+          deadline = ((int32_t)(ext - hardStop) > 0) ? hardStop : ext;
+          continue;                            // wait for this module's real answer
+        }
+        out[n].id = rx.identifier;
+        out[n].verdict = AUTOTLM_CLEAR_REFUSED;
+        out[n].nrc = rx.data[3];               // preserve the verbatim NRC
+        n++;
+      }
+      // anything else in the response window isn't an answer to $04 — ignore
+    }
+    return n;  // 0 = the bus was SILENT (caller must not read that as success)
   }
 
   bool obdVIN(char* buf, size_t bufsize) override {

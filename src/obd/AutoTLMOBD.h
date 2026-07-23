@@ -39,6 +39,19 @@ struct AutoTLMModuleInfo {
   uint8_t permanent;  ///< mode-0A code count (survive a clear)
 };
 
+/**
+ * The honest result of a Mode $04 clear, so a caller (app / CarPlay / USB-Live)
+ * can tell the driver what the *vehicle* actually did instead of assuming
+ * success. Read responderCount first: >0 = that many ECUs answered; 0 = the bus
+ * was SILENT (nothing cleared); -1 = the device couldn't even send (no link).
+ */
+struct AutoTLMClearResult {
+  int8_t responderCount;   ///< ECUs that answered (see above)
+  bool   anyConfirmed;     ///< at least one ECU acknowledged (0x44)
+  bool   anyRefused;       ///< at least one ECU refused (7F 04 <NRC>; engine-running is normal)
+  AutoTLMClearResponder responders[AUTOTLM_MAX_MODULES];  ///< per-ECU detail (id, verdict, nrc)
+};
+
 class AutoTLMOBD {
  public:
   /** Wire up the HAL. Does not touch the car. */
@@ -80,8 +93,14 @@ class AutoTLMOBD {
   const char* dtcAt(int i) const;                            ///< e.g. "P0171"
   bool mil() const { return m_dtcCount > 0; }                ///< check-engine light inferred
   const char* dtcString() const { return m_dtcStr; }         ///< "P0171,P0420"
-  /** Clear stored codes / the MIL (mode 04). */
-  void clearDTCs();
+  /**
+   * Clear stored emission codes / the MIL (functional Mode $04). Returns the
+   * honest per-vehicle result: only local state a module actually CONFIRMED it
+   * cleared is wiped — a refused or silent bus leaves state untouched, so the
+   * device never reports a car clean when it has no idea. Permanent (mode 0A)
+   * codes survive a clear by design.
+   */
+  AutoTLMClearResult clearDTCs();
   /** Register a callback fired once per newly-seen code. */
   void onDTC(AutoTLMDTCCallback cb) { m_dtcCb = cb; }
   /** Same, with the storing module's id (multi-module cars). */

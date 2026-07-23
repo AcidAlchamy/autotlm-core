@@ -81,7 +81,7 @@ re-discovery can only ADD to the supported-PID sets, never shrink them
 | `int dtcCount()` / `const char* dtcAt(i)` | Stored trouble codes, e.g. `"P0171"` — on multi-module cars, the UNION across all modules. |
 | `bool mil()` | Check-engine light (inferred: any code stored). |
 | `const char* dtcString()` | All codes comma-joined: `"P0171,P0420"`. |
-| `void clearDTCs()` | Clear stored codes / the MIL (mode 04). |
+| `AutoTLMClearResult clearDTCs()` | Request a Mode $04 clear; returns the vehicle's HONEST verdict — never assumes success. `responderCount`: >0 = that many ECUs answered, `0` = silent bus (nothing cleared), `-1` = no link. `responders[i]` gives each ECU `{id, verdict CONFIRMED\|REFUSED, nrc}`; `anyConfirmed`/`anyRefused` summarize. Only local state a module confirmed is wiped (a refused/silent bus leaves it). Permanent (0A) codes survive. |
 | `void onDTC(cb)` | New-code callback (same as the facade shortcut); module-aware `(code, moduleId)` overload available. |
 | `int moduleCount()` | Diagnosable modules that answered enumeration (up to 8 per ISO 15765-4). |
 | `AutoTLMModuleInfo module(i)` | Module i: `{id, stored, pending, permanent}` — CAN responder id + per-kind DTC counts. |
@@ -377,6 +377,8 @@ false — modules treat that as "not fitted" and carry on.
 
 Required: `begin, boardId, obdInit, obdReadPID, obdIsPIDSupported,
 obdReadDTC, gnssBegin, gnssAvailable, gnssRead, imuBegin, imuRead`.
+`obdReadDTC` is TRI-STATE: `>=0` code count (`0` = a confirmed no-codes), `-1`
+= the bus did not answer — NO_ANSWER must never read as NO_CODES.
 Optional: `deviceType, obdEnd, obdClearDTC, obdVIN, obdFreezeDTC,
 obdReadFreezePID, obdBatteryVoltage, obdEnumerate, obdReadDTCFrom,
 canAvailable, canRead, canWrite, gnssPower, imuName, led` (+ virtual dtor).

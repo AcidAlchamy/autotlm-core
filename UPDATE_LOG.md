@@ -3,6 +3,25 @@
 Announce-worthy releases and milestones for the AutoTLM Core library
 (github.com/AcidAlchamy/autotlm-core).
 
+## 2026-07-23 — v0.9.1: clearing trouble codes now tells you the truth
+
+- **The device no longer says "cleared" when it wasn't.** Asking the unit to
+  clear stored trouble codes (turn the check-engine light off) used to report
+  success no matter what the car actually did — even when the car refused (which
+  is exactly what a car does when the engine is running) or never answered at
+  all. It now reads the car's real response and tells you plainly: cleared,
+  refused (with the reason), or no answer from the bus.
+- **It only forgets a code the car confirmed it cleared.** A refused or unheard
+  clear leaves the stored codes exactly as they were, so the app can never show a
+  clean bill of health the unit didn't actually get. On cars with several
+  computers each one is asked and answered for independently, and permanent
+  emissions codes correctly survive a clear, as the standard requires.
+- Related: reading codes now tells "no codes stored" apart from "the bus didn't
+  answer," so a car that never replied is never mistaken for a healthy one.
+- For builders: `clearDTCs()` returns an `AutoTLMClearResult` (per-responder
+  verdict + raw refusal code); `obdReadDTC` is tri-state. See docs/API.md and
+  example 04.
+
 ## 2026-07-18 — v0.9.0: live gauges straight from the car, and it always finds you
 
 - **Local live data over Bluetooth.** When your phone is at the car, the app

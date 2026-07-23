@@ -32,6 +32,24 @@ struct AutoTLMCanMsg {
   uint8_t  data[8];
 };
 
+/** Per-responder outcome of a functional Mode $04 (clear emission DTCs). */
+enum AutoTLMClearVerdict : uint8_t {
+  AUTOTLM_CLEAR_CONFIRMED = 0,  ///< ECU acknowledged the clear (positive response 0x44)
+  AUTOTLM_CLEAR_REFUSED   = 1,  ///< ECU refused: 7F 04 <NRC> (engine running → 0x22 is normal)
+};
+
+/**
+ * One emissions ECU's answer to a functional Mode $04 broadcast. A silent
+ * responder is simply ABSENT from the collected list — never invented — so a
+ * responder count of 0 means the whole bus was silent, which is NOT a
+ * successful clear. This is the honest result the whole clear path carries.
+ */
+struct AutoTLMClearResponder {
+  uint32_t id;       ///< CAN responder id, 0x7E8..0x7EF (0 if the board can't attribute)
+  uint8_t  verdict;  ///< AutoTLMClearVerdict
+  uint8_t  nrc;      ///< raw negative-response code when REFUSED (0 otherwise)
+};
+
 /**
  * Abstract board interface. All methods that talk to the vehicle bus are
  * allowed to block briefly (they run on the sensor core); anything called
@@ -78,21 +96,36 @@ class AutoTLMHAL {
   virtual bool obdIsPIDSupported(uint8_t pid) = 0;
 
   /**
-   * Read stored diagnostic trouble codes.
-   * @return number of codes written into `codes` (0 = none / not readable)
+   * Read stored diagnostic trouble codes (functional Mode $03).
+   * @return code count (0 = the car confirmed NO codes), or -1 when the bus did
+   *         not answer. NO_ANSWER (-1) must never read as NO_CODES (0): a silent
+   *         or absent bus is not a clean car. Callers key off the sign.
    */
   virtual int obdReadDTC(uint16_t* codes, int maxCodes) = 0;
 
-  /** Clear stored DTCs and turn the MIL off (mode 04). */
-  virtual void obdClearDTC() {}
+  /**
+   * Clear stored emission DTCs (functional Mode $04) and collect EVERY
+   * responder's verdict until P2 — a functional broadcast is answered
+   * independently by each emissions ECU (0x7E8..0x7EF, up to 8). Fills `out`
+   * with up to `max` per-responder results (CONFIRMED, or REFUSED + the raw
+   * NRC); returns the number of responders that answered. A count of 0 means
+   * the bus was SILENT — never treat that as success. Default: not
+   * implemented → -1. (Mode $04 does not touch permanent / mode-0A codes.)
+   */
+  virtual int obdClearDTC(AutoTLMClearResponder* out, int max) {
+    (void)out; (void)max;
+    return -1;
+  }
 
   /** Read the VIN (mode 09 PID 02). @return true and a NUL-terminated string on success */
   virtual bool obdVIN(char* buf, size_t bufsize) { (void)buf; (void)bufsize; return false; }
 
   /**
    * The DTC that caused the stored freeze frame (mode 02 PID 02, frame 0).
-   * @return the raw 16-bit code, 0 if no freeze frame is stored, -1 if the
-   *         board can't read mode 02 (the default).
+   * @return the raw 16-bit code, 0 = the ECU confirmed NO freeze frame, -1 =
+   *         no answer / the board can't read mode 02. Like obdReadDTC, callers
+   *         must not treat -1 (no answer) as 0 (confirmed none): a silent bus
+   *         should preserve any existing snapshot, not erase it.
    */
   virtual int obdFreezeDTC() { return -1; }
 
